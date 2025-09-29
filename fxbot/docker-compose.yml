@@ -1,0 +1,79 @@
+services:
+  db:
+    image: postgres:16
+    container_name: fxbot_db
+    environment:
+      POSTGRES_USER: fxbot
+      POSTGRES_PASSWORD: fxbot_password
+      POSTGRES_DB: fxbot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - fxbot_network
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: fxbot_api
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://fxbot:fxbot_password@db:5432/fxbot
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    networks:
+      - fxbot_network
+    volumes:
+      - ./api:/app
+
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: fxbot_bot
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - DATABASE_URL=postgresql+asyncpg://fxbot:fxbot_password@db:5432/fxbot
+    depends_on:
+      - db
+    networks:
+      - fxbot_network
+    volumes:
+      - ./bot:/app
+
+  collectors:
+    build:
+      context: ./collectors
+      dockerfile: Dockerfile
+    container_name: fxbot_collectors
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://fxbot:fxbot_password@db:5432/fxbot
+    depends_on:
+      - db
+    networks:
+      - fxbot_network
+    volumes:
+      - ./collectors:/app
+
+  twa:
+    build:
+      context: ./twa
+      dockerfile: Dockerfile
+    container_name: fxbot_twa
+    ports:
+      - "3000:3000"
+    networks:
+      - fxbot_network
+    volumes:
+      - ./twa:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+
+networks:
+  fxbot_network:
+    driver: bridge
