@@ -170,7 +170,6 @@ ehthumbs.db
 Thumbs.db
 
 # Docker
-.dockerignore
 Dockerfile*
 
 # IDEs and editors
