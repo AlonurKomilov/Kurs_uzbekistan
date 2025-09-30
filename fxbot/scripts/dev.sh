@@ -1,170 +1,155 @@
 #!/bin/bash
 
-# FXBot Development Helper Script
+# FXBot Development Stack - Simple startup script
 
 set -e
 
-echo "🤖 FXBot Development Helper"
-echo "=========================="
-
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-print_status() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
+error() { echo -e "${RED}❌ $1${NC}"; }
+success() { echo -e "${GREEN}✅ $1${NC}"; }
+warning() { echo -e "${YELLOW}⚠️ $1${NC}"; }
+info() { echo -e "${BLUE}📋 $1${NC}"; }
 
-print_warning() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
+# Create directories
+mkdir -p logs pids
 
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Check if .env exists
+# Check environment
 if [ ! -f .env ]; then
-    print_warning "No .env file found. Copying from .env.example..."
-    cp .env.example .env
-    print_warning "Please edit .env file with your actual values!"
+    warning "Creating .env template..."
+    cat > .env << 'EOF'
+BOT_TOKEN=your_bot_token_here
+DATABASE_URL=postgresql://fxbot:password@localhost:5432/fxbot
+POSTGRES_USER=fxbot
+POSTGRES_PASSWORD=password
+POSTGRES_DB=fxbot
+EOF
+    warning "Please edit .env with your BOT_TOKEN"
+    exit 1
 fi
 
-# Function to start database
-start_db() {
-    print_status "Starting PostgreSQL database..."
-    docker compose up -d db
-    
-    # Wait for database to be ready
-    print_status "Waiting for database to be ready..."
-    sleep 5
-    
-    # Test connection
-    if docker compose exec db pg_isready -U fxbot > /dev/null 2>&1; then
-        print_status "Database is ready!"
-    else
-        print_error "Database failed to start properly"
-        exit 1
-    fi
-}
+source .env
 
-# Function to install Python dependencies
-install_python_deps() {
-    print_status "Installing Python dependencies..."
-    
-    # Bot
-    if [ -d "bot" ]; then
-        print_status "Installing bot dependencies..."
-        cd bot && pip install -r requirements.txt && cd ..
-    fi
-    
-    # API
-    if [ -d "api" ]; then
-        print_status "Installing API dependencies..."
-        cd api && pip install -r requirements.txt && cd ..
-    fi
-    
-    # Collectors
-    if [ -d "collectors" ]; then
-        print_status "Installing collectors dependencies..."
-        cd collectors && pip install -r requirements.txt && cd ..
-    fi
-}
+if [ -z "$BOT_TOKEN" ] || [ "$BOT_TOKEN" = "your_bot_token_here" ]; then
+    error "BOT_TOKEN not configured in .env"
+    exit 1
+fi
 
-# Function to install Node.js dependencies
-install_node_deps() {
-    if [ -d "twa" ]; then
-        print_status "Installing TWA dependencies..."
-        cd twa && npm install && cd ..
-    fi
-}
-
-# Function to run development services
-run_services() {
-    print_status "Starting development services..."
-    
-    # Create tmux session if available
-    if command -v tmux &> /dev/null; then
-        print_status "Using tmux for session management..."
-        
-        # Kill existing session if it exists
-        tmux kill-session -t fxbot 2>/dev/null || true
-        
-        # Create new session
-        tmux new-session -d -s fxbot
-        
-        # API
-        tmux new-window -t fxbot -n api
-        tmux send-keys -t fxbot:api "cd api && uvicorn main:app --reload --host 0.0.0.0 --port 8000" Enter
-        
-        # Bot
-        tmux new-window -t fxbot -n bot
-        tmux send-keys -t fxbot:bot "cd bot && python main.py" Enter
-        
-        # Collectors
-        tmux new-window -t fxbot -n collectors
-        tmux send-keys -t fxbot:collectors "cd collectors && python main.py" Enter
-        
-        # TWA
-        tmux new-window -t fxbot -n twa
-        tmux send-keys -t fxbot:twa "cd twa && npm run dev" Enter
-        
-        print_status "Services started in tmux session 'fxbot'"
-        print_status "Use 'tmux attach -t fxbot' to attach to the session"
-        print_status "Use 'tmux kill-session -t fxbot' to stop all services"
-        
-    else
-        print_warning "tmux not found. Please run services manually:"
-        echo "Terminal 1: cd api && uvicorn main:app --reload --host 0.0.0.0 --port 8000"
-        echo "Terminal 2: cd bot && python main.py"
-        echo "Terminal 3: cd collectors && python main.py"
-        echo "Terminal 4: cd twa && npm run dev"
-    fi
-}
-
-# Main execution
-case "${1:-all}" in
-    "db")
-        start_db
+# Handle commands
+case "${1:-start}" in
+    "stop")
+        info "Stopping services..."
+        for pidfile in pids/*.pid; do
+            [ -f "$pidfile" ] && kill $(cat "$pidfile") 2>/dev/null || true
+            rm -f "$pidfile"
+        done
+        docker stop fxbot-postgres 2>/dev/null || true
+        success "Services stopped"
+        exit 0
         ;;
-    "deps")
-        install_python_deps
-        install_node_deps
-        ;;
-    "python")
-        install_python_deps
-        ;;
-    "node")
-        install_node_deps
-        ;;
-    "services"|"run")
-        run_services
-        ;;
-    "all")
-        start_db
-        install_python_deps
-        install_node_deps
-        run_services
-        ;;
-    "help"|"-h"|"--help")
-        echo "Usage: $0 [command]"
-        echo ""
-        echo "Commands:"
-        echo "  all       - Setup everything and run services (default)"
-        echo "  db        - Start database only"
-        echo "  deps      - Install all dependencies"
-        echo "  python    - Install Python dependencies only"
-        echo "  node      - Install Node.js dependencies only"
-        echo "  services  - Run development services"
-        echo "  help      - Show this help"
-        ;;
-    *)
-        print_error "Unknown command: $1"
-        print_status "Use '$0 help' for available commands"
-        exit 1
+    "status")
+        info "Checking service status..."
+        
+        if docker ps | grep -q fxbot-postgres; then
+            success "✓ PostgreSQL: Running"
+        else
+            error "✗ PostgreSQL: Stopped"
+        fi
+        
+        if curl -s http://localhost:8000/health >/dev/null 2>&1; then
+            success "✓ API: Running"
+        else
+            error "✗ API: Not responding"
+        fi
+        
+        if [ -f "pids/bot.pid" ] && kill -0 $(cat pids/bot.pid) 2>/dev/null; then
+            success "✓ Bot: Running"
+        else
+            error "✗ Bot: Stopped"
+        fi
+        
+        exit 0
         ;;
 esac
 
-print_status "Done! 🎉"
+info "🚀 Starting FXBot Development Stack"
+
+# Cleanup on exit
+cleanup() {
+    info "Cleaning up..."
+    for pidfile in pids/*.pid; do
+        [ -f "$pidfile" ] && kill $(cat "$pidfile") 2>/dev/null || true
+        rm -f "$pidfile"
+    done
+    docker stop fxbot-postgres 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+# Start PostgreSQL
+info "Starting PostgreSQL..."
+docker rm -f fxbot-postgres 2>/dev/null || true
+docker run -d --name fxbot-postgres \
+    -e POSTGRES_USER=${POSTGRES_USER:-fxbot} \
+    -e POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password} \
+    -e POSTGRES_DB=${POSTGRES_DB:-fxbot} \
+    -p 5432:5432 postgres:15 >/dev/null
+sleep 5
+success "PostgreSQL started"
+
+# Setup Python
+info "Setting up Python..."
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+fi
+source venv/bin/activate
+pip install -q aiogram fastapi uvicorn sqlalchemy asyncpg python-dotenv apscheduler aiohttp
+success "Python environment ready"
+
+# Start API
+info "Starting API..."
+cd api
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload > ../logs/api.log 2>&1 &
+echo $! > ../pids/api.pid
+cd ..
+sleep 3
+success "API started"
+
+# Start Bot
+info "Starting Bot..."
+export PYTHONPATH="/workspaces/Kurs_uzbekistan/fxbot:$PYTHONPATH"
+python bot/main.py > logs/bot.log 2>&1 &
+echo $! > pids/bot.pid
+sleep 3
+success "Bot started"
+
+# Start Collectors
+info "Starting Collectors..."
+export PYTHONPATH="/workspaces/Kurs_uzbekistan/fxbot:$PYTHONPATH"
+python collectors/main.py > logs/collectors.log 2>&1 &
+echo $! > pids/collectors.pid
+sleep 2
+success "Collectors started"
+
+echo
+success "🎉 Development stack is running!"
+echo
+info "Services:"
+info "  API:      http://localhost:8000"
+info "  Health:   http://localhost:8000/api/health"
+info "  Database: localhost:5432"
+echo
+info "Logs:"
+info "  API:        logs/api.log"
+info "  Bot:        logs/bot.log"
+info "  Collectors: logs/collectors.log"
+echo
+warning "Press Ctrl+C to stop all services"
+
+# Keep running
+while true; do
+    sleep 10
+done

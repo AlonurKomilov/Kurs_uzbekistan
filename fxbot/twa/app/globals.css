@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles for mobile-friendly TWA */
+html {
+  font-size: 16px; /* Ensure 16px base for accessibility */
+}
+
+body {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+}
+
+/* Touch targets should be at least 44px */
+button, .clickable {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Custom loading animation */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Font sizes for mobile readability */
+.text-base {
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.text-lg {
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+.text-xl {
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+.text-sm {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.text-xs {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Telegram WebApp theme colors */
+:root {
+  --tg-theme-bg-color: #ffffff;
+  --tg-theme-text-color: #000000;
+  --tg-theme-hint-color: #999999;
+  --tg-theme-link-color: #3b82f6;
+  --tg-theme-button-color: #3b82f6;
+  --tg-theme-button-text-color: #ffffff;
+}
+
+/* Dark theme support */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tg-theme-bg-color: #17212b;
+    --tg-theme-text-color: #ffffff;
+    --tg-theme-hint-color: #708499;
+    --tg-theme-link-color: #6ab7ff;
+    --tg-theme-button-color: #5288c1;
+    --tg-theme-button-text-color: #ffffff;
+  }
+}
+
+/* Responsive table for mobile */
+.mobile-table {
+  font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .mobile-table {
+    font-size: 12px;
+  }
+  
+  .mobile-table .grid-cols-5 {
+    gap: 8px;
+  }
+}
+
+/* Smooth transitions */
+* {
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Remove focus outline for touch devices but keep for keyboard navigation */
+@media (pointer: coarse) {
+  button:focus, .clickable:focus {
+    outline: none;
+  }
+}
+
+/* High contrast for accessibility */
+@media (prefers-contrast: high) {
+  .text-gray-600 {
+    color: #000000;
+  }
+  
+  .text-gray-500 {
+    color: #000000;
+  }
+  
+  .border-gray-200 {
+    border-color: #000000;
+  }
+}

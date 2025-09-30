@@ -2,16 +2,23 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from typing import Callable
 
 
-def get_main_keyboard(i18n: Callable[[str], str]) -> ReplyKeyboardMarkup:
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from typing import Callable
+
+
+def get_main_keyboard(i18n: Callable[[str], str], is_subscribed: bool = False) -> ReplyKeyboardMarkup:
     """Create main reply keyboard with localized buttons."""
+    # Choose subscribe or unsubscribe button based on current status
+    subscribe_button = i18n("button.unsubscribe") if is_subscribed else i18n("button.subscribe")
+    
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [
                 KeyboardButton(text=i18n("button.current-rates")),
-                KeyboardButton(text=i18n("button.today-rates"))
+                KeyboardButton(text=i18n("button.live-rates"))
             ],
             [
-                KeyboardButton(text=i18n("button.subscribe")),
+                KeyboardButton(text=subscribe_button),
                 KeyboardButton(text=i18n("button.language"))
             ]
         ],

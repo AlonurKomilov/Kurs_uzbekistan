@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, BigInteger, DateTime, ForeignKey, Numeric
+from sqlalchemy import Column, Integer, String, BigInteger, DateTime, ForeignKey, Numeric, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from infrastructure.db import Base
@@ -13,10 +13,11 @@ class User(Base):
     tg_user_id = Column(BigInteger, unique=True, nullable=False, index=True)
     lang = Column(String(16), default="uz_cy", nullable=False)
     tz = Column(String(32), default="Asia/Tashkent", nullable=False)
+    subscribed = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
     def __repr__(self):
-        return f"<User(id={self.id}, tg_user_id={self.tg_user_id}, lang={self.lang})>"
+        return f"<User(id={self.id}, tg_user_id={self.tg_user_id}, lang={self.lang}, subscribed={self.subscribed})>"
 
 
 class Bank(Base):

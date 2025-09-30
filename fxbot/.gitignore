@@ -170,7 +170,7 @@ ehthumbs.db
 Thumbs.db
 
 # Docker
-Dockerfile*
+
 
 # IDEs and editors
 .idea/

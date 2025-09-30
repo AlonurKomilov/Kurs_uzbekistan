@@ -1,7 +1,24 @@
 {
-  "title": "Currency Exchange",
+  "live_title": "Live Rates",
+  "current_title": "Current Rates",
   "loading": "Loading...",
-  "rates": "Exchange Rates",
-  "currency": "Currency",
-  "rate": "Rate"
+  "updating": "Updating...",
+  "bank": "Bank",
+  "buy": "Buy",
+  "sell": "Sell",
+  "delta": "Δ",
+  "updated": "Updated",
+  "more": "Show More",
+  "less": "Show Less",
+  "min_sell": "Min Sell",
+  "avg_sell": "Avg Sell",
+  "max_sell": "Max Sell",
+  "banks_count": "Banks",
+  "error_loading": "Error loading data",
+  "retry": "Retry",
+  "ago": "ago",
+  "just_now": "just now",
+  "minutes": "minutes",
+  "hours": "hours",
+  "days": "days"
 }

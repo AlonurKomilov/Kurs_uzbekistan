@@ -45,6 +45,41 @@ class UserRepository:
         if not user:
             user = await self.create_user(tg_user_id, default_lang)
         return user
+    
+    async def toggle_subscription(self, tg_user_id: int) -> Optional[User]:
+        """Toggle user's subscription status."""
+        user = await self.get_by_tg_user_id(tg_user_id)
+        if user:
+            # Use update statement instead of direct attribute assignment
+            new_subscribed = not bool(user.subscribed)
+            await self.session.execute(
+                update(User)
+                .where(User.tg_user_id == tg_user_id)
+                .values(subscribed=new_subscribed)
+            )
+            await self.session.commit()
+            await self.session.refresh(user)
+        return user
+    
+    async def get_subscribed_users(self) -> List[User]:
+        """Get all subscribed users."""
+        result = await self.session.execute(
+            select(User).where(User.subscribed == True)
+        )
+        return list(result.scalars().all())
+    
+    async def update_subscription(self, tg_user_id: int, subscribed: bool) -> Optional[User]:
+        """Update user's subscription status."""
+        result = await self.session.execute(
+            update(User)
+            .where(User.tg_user_id == tg_user_id)
+            .values(subscribed=subscribed)
+            .returning(User)
+        )
+        user = result.scalars().first()
+        if user:
+            await self.session.commit()
+        return user
 
 
 class BankRatesRepo:
@@ -80,7 +115,7 @@ class BankRatesRepo:
             .order_by(desc(BankRate.sell))
         )
         
-        return result.scalars().all()
+        return list(result.scalars().all())
     
     async def get_bank_by_slug(self, slug: str) -> Optional[Bank]:
         """Get bank by slug."""
@@ -89,7 +124,7 @@ class BankRatesRepo:
         )
         return result.scalars().first()
     
-    async def create_bank(self, name: str, slug: str, region: str = None, website: str = None) -> Bank:
+    async def create_bank(self, name: str, slug: str, region: str | None = None, website: str | None = None) -> Bank:
         """Create a new bank."""
         bank = Bank(name=name, slug=slug, region=region, website=website)
         self.session.add(bank)

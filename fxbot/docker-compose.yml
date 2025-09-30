@@ -12,42 +12,57 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - fxbot_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fxbot -d fxbot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   api:
     build:
-      context: ./api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api/Dockerfile
     container_name: fxbot_api
     environment:
       - DATABASE_URL=postgresql+asyncpg://fxbot:fxbot_password@db:5432/fxbot
+      - BOT_TOKEN=${BOT_TOKEN:-fake_token_for_dev}
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - fxbot_network
     volumes:
-      - ./api:/app
+      - ./api:/app/api
+      - ./core:/app/core
+      - ./infrastructure:/app/infrastructure
+      - ./repositories:/app/repositories
 
   bot:
     build:
-      context: ./bot
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: bot/Dockerfile
     container_name: fxbot_bot
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
       - DATABASE_URL=postgresql+asyncpg://fxbot:fxbot_password@db:5432/fxbot
+      - TWA_BASE_URL=http://localhost:3000
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - fxbot_network
     volumes:
-      - ./bot:/app
+      - ./bot:/app/bot
+      - ./core:/app/core
+      - ./infrastructure:/app/infrastructure
+      - ./locales:/app/locales
 
   collectors:
     build:
-      context: ./collectors
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: collectors/Dockerfile
     container_name: fxbot_collectors
     environment:
       - DATABASE_URL=postgresql+asyncpg://fxbot:fxbot_password@db:5432/fxbot
@@ -56,13 +71,18 @@ services:
     networks:
       - fxbot_network
     volumes:
-      - ./collectors:/app
+      - ./collectors:/app/collectors
+      - ./core:/app/core
+      - ./infrastructure:/app/infrastructure
 
   twa:
     build:
       context: ./twa
       dockerfile: Dockerfile
     container_name: fxbot_twa
+    environment:
+      - DOCKER_ENV=true
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
     ports:
       - "3000:3000"
     networks:
@@ -70,6 +90,8 @@ services:
     volumes:
       - ./twa:/app
       - /app/node_modules
+    depends_on:
+      - api
 
 volumes:
   postgres_data:
