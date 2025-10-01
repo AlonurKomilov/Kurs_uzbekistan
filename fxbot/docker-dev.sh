@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# FXBot Docker Development Environment
+# KUBot Docker Development Environment
 # Simple script to manage Docker containers
 
 set -e
@@ -35,7 +35,7 @@ fi
 
 case "${1:-up}" in
     "up"|"start")
-        info "Starting FXBot services..."
+        info "Starting KUBot services..."
         docker-compose up --build -d
         
         info "Waiting for services to be ready..."

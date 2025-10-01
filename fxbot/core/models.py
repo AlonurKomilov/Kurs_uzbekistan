@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, BigInteger, DateTime, ForeignKey, Numeric, Boolean
+from sqlalchemy import Column, Integer, String, BigInteger, DateTime, ForeignKey, Numeric, Boolean, Date, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from infrastructure.db import Base
@@ -55,3 +55,21 @@ class BankRate(Base):
     
     def __repr__(self):
         return f"<BankRate(id={self.id}, bank_id={self.bank_id}, code={self.code}, sell={self.sell})>"
+
+
+class CbuRate(Base):
+    """CBU (Central Bank of Uzbekistan) official exchange rates."""
+    
+    __tablename__ = "cbu_rates"
+    __table_args__ = (
+        UniqueConstraint('code', 'rate_date', name='uq_cbu_rates_code_date'),
+    )
+    
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(3), nullable=False, index=True)  # USD, EUR, RUB etc.
+    rate = Column(Numeric(12, 4), nullable=False)  # Official rate
+    rate_date = Column(Date, nullable=False, index=True)  # Date this rate applies to
+    fetched_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    
+    def __repr__(self):
+        return f"<CbuRate(id={self.id}, code={self.code}, rate={self.rate}, date={self.rate_date})>"

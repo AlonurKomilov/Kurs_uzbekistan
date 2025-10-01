@@ -1,19 +1,19 @@
 services:
   db:
     image: postgres:16
-    container_name: fxbot_db
+    container_name: kubot_db
     environment:
-      POSTGRES_USER: fxbot
-      POSTGRES_PASSWORD: fxbot_password
-      POSTGRES_DB: fxbot
+      POSTGRES_USER: kubot
+      POSTGRES_PASSWORD: kubot_password
+      POSTGRES_DB: kubot
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - kubot_postgres_data:/var/lib/postgresql/data
     networks:
-      - fxbot_network
+      - kubot_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fxbot -d fxbot"]
+      test: ["CMD-SHELL", "pg_isready -U kubot -d kubot"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -22,9 +22,9 @@ services:
     build:
       context: .
       dockerfile: api/Dockerfile
-    container_name: fxbot_api
+    container_name: kubot_api
     environment:
-      - DATABASE_URL=postgresql+asyncpg://fxbot:fxbot_password@db:5432/fxbot
+      - DATABASE_URL=postgresql+asyncpg://kubot:kubot_password@db:5432/kubot
       - BOT_TOKEN=${BOT_TOKEN:-fake_token_for_dev}
     ports:
       - "8000:8000"
@@ -32,7 +32,7 @@ services:
       db:
         condition: service_healthy
     networks:
-      - fxbot_network
+      - kubot_network
     volumes:
       - ./api:/app/api
       - ./core:/app/core
@@ -43,16 +43,16 @@ services:
     build:
       context: .
       dockerfile: bot/Dockerfile
-    container_name: fxbot_bot
+    container_name: kubot_bot
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
-      - DATABASE_URL=postgresql+asyncpg://fxbot:fxbot_password@db:5432/fxbot
+      - DATABASE_URL=postgresql+asyncpg://kubot:kubot_password@db:5432/kubot
       - TWA_BASE_URL=http://localhost:3000
     depends_on:
       db:
         condition: service_healthy
     networks:
-      - fxbot_network
+      - kubot_network
     volumes:
       - ./bot:/app/bot
       - ./core:/app/core
@@ -63,13 +63,13 @@ services:
     build:
       context: .
       dockerfile: collectors/Dockerfile
-    container_name: fxbot_collectors
+    container_name: kubot_collectors
     environment:
-      - DATABASE_URL=postgresql+asyncpg://fxbot:fxbot_password@db:5432/fxbot
+      - DATABASE_URL=postgresql+asyncpg://kubot:kubot_password@db:5432/kubot
     depends_on:
       - db
     networks:
-      - fxbot_network
+      - kubot_network
     volumes:
       - ./collectors:/app/collectors
       - ./core:/app/core
@@ -79,14 +79,14 @@ services:
     build:
       context: ./twa
       dockerfile: Dockerfile
-    container_name: fxbot_twa
+    container_name: kubot_twa
     environment:
       - DOCKER_ENV=true
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     ports:
       - "3000:3000"
     networks:
-      - fxbot_network
+      - kubot_network
     volumes:
       - ./twa:/app
       - /app/node_modules
@@ -94,8 +94,8 @@ services:
       - api
 
 volumes:
-  postgres_data:
+  kubot_postgres_data:
 
 networks:
-  fxbot_network:
+  kubot_network:
     driver: bridge

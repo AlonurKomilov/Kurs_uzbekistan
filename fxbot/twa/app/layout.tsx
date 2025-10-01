@@ -3,7 +3,7 @@ import { ReactNode } from 'react'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'FXBot - Live Currency Rates',
+  title: 'KUBot - Live Currency Rates',
   description: 'Real-time currency exchange rates for banks in Uzbekistan',
   icons: {
     icon: '/favicon.ico',

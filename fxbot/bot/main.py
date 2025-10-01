@@ -56,7 +56,7 @@ async def health_monitor():
 
 async def main():
     """Main function to start the bot."""
-    logger.info("🤖 Starting FXBot...")
+    logger.info("🤖 Starting KUBot...")
     logger.info(f"Bot startup time: {datetime.now().isoformat()}")
     
     try:

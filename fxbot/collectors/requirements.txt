@@ -3,3 +3,4 @@ asyncpg==0.29.0
 python-dotenv==1.0.1
 httpx==0.28.1
 apscheduler==3.10.4
+tenacity>=8.0.0

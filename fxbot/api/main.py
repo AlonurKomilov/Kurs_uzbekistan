@@ -25,7 +25,7 @@ from core.models import User, Bank, BankRate
 from core.repos import UserRepository, BankRatesRepo
 from infrastructure.db import get_session, init_db
 
-app = FastAPI(title="FXBot API", version="1.0.0")
+app = FastAPI(title="KUBot API", version="1.0.0")
 
 # CORS middleware - allow TWA dev server
 app.add_middleware(
@@ -33,7 +33,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",  # Next.js dev server
         "https://localhost:3000", 
-        "https://fxbot.uz",  # Production domain
+        "https://kubot.uz",  # Production domain
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
@@ -153,7 +153,7 @@ async def startup_event():
 
 @app.get("/")
 async def root():
-    return {"message": "FXBot API", "version": "1.0.0"}
+    return {"message": "KUBot API", "version": "1.0.0"}
 
 @app.get("/health")
 async def health(session: AsyncSession = Depends(get_session)):
@@ -164,9 +164,11 @@ async def health(session: AsyncSession = Depends(get_session)):
         user_count = result.scalar()
         
         # Check if we have recent bank rates
+        from datetime import timedelta
+        recent_cutoff = datetime.utcnow() - timedelta(hours=1)
         recent_rates = await session.execute(
             select(func.count()).select_from(BankRate)
-            .where(BankRate.fetched_at > func.now() - func.interval('1 hour'))
+            .where(BankRate.fetched_at > recent_cutoff)
         )
         recent_rate_count = recent_rates.scalar()
         

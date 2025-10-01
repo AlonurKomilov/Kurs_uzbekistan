@@ -1,4 +1,4 @@
-# FXBot - Uzbekistan Currency Exchange Bot# FXBot - Currency Exchange Bot
+# KUBot - Uzbekistan Currency Exchange Bot# KUBot - Currency Exchange Bot
 
 
 
@@ -146,7 +146,7 @@ cd twa && npm run dev
 
 ```env
 BOT_TOKEN=your_telegram_bot_token
-DATABASE_URL=postgresql+asyncpg://fxbot:fxbot_password@db:5432/fxbot
+DATABASE_URL=postgresql+asyncpg://kubot:kubot_password@db:5432/kubot
 ```
 
 ## 📱 Bot Commands

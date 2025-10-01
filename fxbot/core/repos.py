@@ -1,8 +1,11 @@
 from typing import Optional, List
-from sqlalchemy import select, update, desc, and_
+from sqlalchemy import select, update, desc, and_, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from core.models import User, Bank, BankRate
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from datetime import datetime, date
+from core.models import User, Bank, BankRate, CbuRate
+from infrastructure.db import SessionLocal
 
 
 class UserRepository:
@@ -139,3 +142,77 @@ class BankRatesRepo:
         await self.session.commit()
         await self.session.refresh(rate)
         return rate
+
+
+class CbuRatesRepo:
+    """Repository for CBU (Central Bank of Uzbekistan) official exchange rates."""
+    
+    def __init__(self, session: Optional[AsyncSession] = None):
+        self._own_session = session is None
+        self.session = session
+    
+    async def upsert_rate(self, code: str, rate: float, date_str: str | None = None, fetched_at: datetime | None = None):
+        """Insert or update CBU rate with conflict resolution."""
+        if self._own_session:
+            async with SessionLocal() as session:
+                await self._upsert_in_session(session, code, rate, date_str, fetched_at)
+        else:
+            await self._upsert_in_session(self.session, code, rate, date_str, fetched_at)
+    
+    async def _upsert_in_session(self, session: AsyncSession, code: str, rate: float, date_str: str | None, fetched_at: datetime | None):
+        """Perform upsert operation within a session."""
+        try:
+            # Parse date or use today
+            if date_str:
+                try:
+                    rate_date = date.fromisoformat(date_str.split('T')[0])  # Handle datetime strings
+                except (ValueError, AttributeError):
+                    rate_date = date.today()
+            else:
+                rate_date = date.today()
+            
+            # Use current time if fetched_at not provided
+            if fetched_at is None:
+                fetched_at = datetime.utcnow()
+            
+            # PostgreSQL-specific upsert (INSERT ... ON CONFLICT)
+            stmt = postgres_insert(CbuRate).values(
+                code=code.upper(),
+                rate=rate,
+                rate_date=rate_date,
+                fetched_at=fetched_at
+            )
+            
+            # On conflict with code + rate_date, update rate and fetched_at
+            stmt = stmt.on_conflict_do_update(
+                index_elements=['code', 'rate_date'],
+                set_=dict(
+                    rate=stmt.excluded.rate,
+                    fetched_at=stmt.excluded.fetched_at
+                )
+            )
+            
+            await session.execute(stmt)
+            await session.commit()
+            
+        except Exception as e:
+            await session.rollback()
+            raise e
+    
+    async def get_latest_rates(self, codes: List[str] | None = None) -> List[CbuRate]:
+        """Get latest CBU rates for specified currency codes."""
+        if self._own_session:
+            async with SessionLocal() as session:
+                return await self._get_latest_in_session(session, codes)
+        else:
+            return await self._get_latest_in_session(self.session, codes)
+    
+    async def _get_latest_in_session(self, session: AsyncSession, codes: List[str] | None) -> List[CbuRate]:
+        """Get latest rates within a session."""
+        query = select(CbuRate).order_by(desc(CbuRate.rate_date), desc(CbuRate.fetched_at))
+        
+        if codes:
+            query = query.where(CbuRate.code.in_([c.upper() for c in codes]))
+        
+        result = await session.execute(query)
+        return list(result.scalars().all())

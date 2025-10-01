@@ -2,10 +2,15 @@ import asyncio
 import logging
 import os
 import sys
+from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from infrastructure.db import init_db
 from cbu import collect_cbu_rates
 
@@ -37,7 +42,7 @@ async def health_monitor():
 
 async def main():
     """Main function to start the collectors."""
-    logger.info("📊 Starting FXBot Collectors...")
+    logger.info("📊 Starting KUBot Collectors...")
     logger.info(f"Collector startup time: {datetime.now().isoformat()}")
     
     try:

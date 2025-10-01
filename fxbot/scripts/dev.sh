@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# FXBot Development Stack - Simple startup script
+# KUBot Development Stack - Simple startup script
 
 set -e
 
@@ -23,10 +23,10 @@ if [ ! -f .env ]; then
     warning "Creating .env template..."
     cat > .env << 'EOF'
 BOT_TOKEN=your_bot_token_here
-DATABASE_URL=postgresql://fxbot:password@localhost:5432/fxbot
-POSTGRES_USER=fxbot
+DATABASE_URL=postgresql://kubot:password@localhost:5432/kubot
+POSTGRES_USER=kubot
 POSTGRES_PASSWORD=password
-POSTGRES_DB=fxbot
+POSTGRES_DB=kubot
 EOF
     warning "Please edit .env with your BOT_TOKEN"
     exit 1
@@ -47,14 +47,14 @@ case "${1:-start}" in
             [ -f "$pidfile" ] && kill $(cat "$pidfile") 2>/dev/null || true
             rm -f "$pidfile"
         done
-        docker stop fxbot-postgres 2>/dev/null || true
+        docker stop kubot-postgres 2>/dev/null || true
         success "Services stopped"
         exit 0
         ;;
     "status")
         info "Checking service status..."
         
-        if docker ps | grep -q fxbot-postgres; then
+        if docker ps | grep -q kubot-postgres; then
             success "✓ PostgreSQL: Running"
         else
             error "✗ PostgreSQL: Stopped"
@@ -76,7 +76,7 @@ case "${1:-start}" in
         ;;
 esac
 
-info "🚀 Starting FXBot Development Stack"
+info "🚀 Starting KUBot Development Stack"
 
 # Cleanup on exit
 cleanup() {
@@ -91,11 +91,11 @@ trap cleanup EXIT INT TERM
 
 # Start PostgreSQL
 info "Starting PostgreSQL..."
-docker rm -f fxbot-postgres 2>/dev/null || true
-docker run -d --name fxbot-postgres \
-    -e POSTGRES_USER=${POSTGRES_USER:-fxbot} \
+docker rm -f kubot-postgres 2>/dev/null || true
+docker run -d --name kubot-postgres \
+    -e POSTGRES_USER=${POSTGRES_USER:-kubot} \
     -e POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password} \
-    -e POSTGRES_DB=${POSTGRES_DB:-fxbot} \
+    -e POSTGRES_DB=${POSTGRES_DB:-kubot} \
     -p 5432:5432 postgres:15 >/dev/null
 sleep 5
 success "PostgreSQL started"
