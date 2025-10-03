@@ -73,3 +73,21 @@ class CbuRate(Base):
     
     def __repr__(self):
         return f"<CbuRate(id={self.id}, code={self.code}, rate={self.rate}, date={self.rate_date})>"
+
+
+class Dashboard(Base):
+    """Dashboard model for tracking live currency rate messages."""
+    
+    __tablename__ = "dashboards"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(BigInteger, nullable=False, index=True)  # Telegram user ID
+    chat_id = Column(BigInteger, nullable=False, index=True)  # Telegram chat ID
+    message_id = Column(BigInteger, nullable=False, index=True)  # Telegram message ID
+    last_hash = Column(String(64), nullable=True)  # SHA-256 hash of last message content
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    def __repr__(self):
+        return f"<Dashboard(id={self.id}, user_id={self.user_id}, chat_id={self.chat_id}, message_id={self.message_id}, is_active={self.is_active})>"

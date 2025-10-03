@@ -2,10 +2,11 @@ import hashlib
 import math
 from datetime import datetime
 from typing import List, Optional, Tuple
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from core.repos import BankRatesRepo
 from core.models import BankRate
+from bot.utils.paging import paginate, get_pagination_info, has_previous_page, has_next_page, PAGE_SIZE
 
 router = Router()
 
@@ -17,7 +18,7 @@ content_hashes = {}
 
 # Configuration
 MAX_MESSAGE_LENGTH = 4000  # Leave margin for Telegram's 4096 limit
-BANKS_PER_PAGE = 20  # TODO: Optimize based on bank name lengths and future WebSocket push updates
+BANKS_PER_PAGE = PAGE_SIZE  # Use paging utility default
 DEFAULT_BANKS_DISPLAY = 5  # Show top 5 by default
 
 
@@ -50,26 +51,96 @@ def get_page_rates(rates: List[BankRate], page: int, banks_per_page: int = BANKS
     return rates[start_idx:end_idx]
 
 
-def create_currency_tabs_keyboard(
-    i18n, 
-    current_currency: str = "USD", 
-    show_all: bool = False,
+def format_bank_table(
+    currency: str, 
+    rates: List[BankRate], 
+    dt_str: str,
+    i18n,
+    mode: str = 'top',
+    limit: Optional[int] = None,
     current_page: int = 1,
     total_pages: int = 1
+) -> str:
+    """
+    Format currency rates as a table.
+    
+    Args:
+        currency: Currency code (USD, EUR, etc.)
+        rates: List of bank rates
+        dt_str: Time string for "last updated"
+        i18n: Internationalization function
+        mode: Display mode ('top' or 'page')
+        limit: Maximum number of banks to show
+        current_page: Current page number
+        total_pages: Total number of pages
+    """
+    if not rates:
+        return i18n("rates.no-rates")
+    
+    message_parts = []
+    message_parts.append(f"💱 {i18n('rates.title')} - {currency}")
+    message_parts.append(f"🕐 {i18n('rates.last-updated', time=dt_str)}")
+    message_parts.append("")
+    
+    # Show page info for paginated results
+    if mode == 'page' and total_pages > 1:
+        message_parts.append(f"📄 {get_pagination_info(current_page, total_pages)}")
+    
+    message_parts.append(f"🏦 {i18n('rates.top-banks')}")
+    message_parts.append("")
+    
+    # Header row
+    header = f"{'Bank':<15} {'Buy':<8} {'Sell':<8} {'Δ':<6}"
+    message_parts.append(f"`{header}`")
+    message_parts.append("```")
+    
+    # Show rates for current view
+    display_rates = rates
+    if limit:
+        display_rates = rates[:limit]
+    
+    # Format each bank rate
+    for rate in display_rates:
+        bank_name = rate.bank.name[:12] if len(rate.bank.name) > 12 else rate.bank.name
+        buy_rate = f"{float(getattr(rate, 'buy')):,.0f}"
+        sell_rate = f"{float(getattr(rate, 'sell')):,.0f}"
+        delta = float(getattr(rate, 'sell')) - float(getattr(rate, 'buy'))
+        delta_str = f"{delta:+.0f}"
+        
+        row = f"{bank_name:<15} {buy_rate:<8} {sell_rate:<8} {delta_str:<6}"
+        message_parts.append(row)
+    
+    message_parts.append("```")
+    message_parts.append("")
+    message_parts.append(f"ℹ️ {i18n('rates.disclaimer')}")
+    
+    return "\n".join(message_parts)
+
+
+def build_tabs_with_paging(
+    currency: str, 
+    current_page: int, 
+    total_pages: int, 
+    i18n,
+    show_all: bool = False
 ) -> InlineKeyboardMarkup:
     """
-    Create inline keyboard with currency tabs and navigation buttons.
+    Build keyboard with currency tabs and paging buttons.
     
-    TODO: Add keyboard caching mechanism when rate update frequency is optimized
-    to avoid regenerating identical keyboards.
+    Args:
+        currency: Current currency
+        current_page: Current page number
+        total_pages: Total number of pages
+        i18n: Internationalization function
+        show_all: Whether showing all results or just top
     """
     keyboard = []
     
     # Currency tabs row
     currency_row = []
-    for currency in SUPPORTED_CURRENCIES:
-        text = f"{'🔸' if currency == current_currency else '▫️'} {currency}"
-        callback_data = f"cr:{currency}:{'all' if show_all else 'top'}"
+    for curr in SUPPORTED_CURRENCIES:
+        text = f"{'🔸' if curr == currency else '▫️'} {curr}"
+        callback_data = f"cr:{curr}:{'all' if show_all else 'top'}"
         currency_row.append(InlineKeyboardButton(text=text, callback_data=callback_data))
     
     keyboard.append(currency_row)
@@ -79,24 +150,23 @@ def create_currency_tabs_keyboard(
         nav_row = []
         
         # Previous page button
-        if current_page > 1:
+        if has_previous_page(current_page):
             nav_row.append(InlineKeyboardButton(
-                text=i18n("rates.prev"),
-                callback_data=f"cr:{current_currency}:p{current_page - 1}"
+                text="◀️ Prev",
+                callback_data=f"cr:{currency}:p{current_page - 1}"
             ))
         
-        # Page indicator (only if there are multiple pages)
-        if total_pages > 1:
-            nav_row.append(InlineKeyboardButton(
-                text=i18n("rates.page", current=current_page, total=total_pages),
-                callback_data="noop"  # Non-clickable indicator
-            ))
+        # Page indicator
+        nav_row.append(InlineKeyboardButton(
+            text=f"{current_page}/{total_pages}",
+            callback_data="noop"  # Non-clickable indicator
+        ))
         
         # Next page button
-        if current_page < total_pages:
+        if has_next_page(current_page, total_pages):
             nav_row.append(InlineKeyboardButton(
-                text=i18n("rates.next"),
-                callback_data=f"cr:{current_currency}:p{current_page + 1}"
+                text="Next ▶️",
+                callback_data=f"cr:{currency}:p{current_page + 1}"
             ))
         
         if nav_row:
@@ -105,8 +175,8 @@ def create_currency_tabs_keyboard(
         # Back to TOP button for paginated view
         keyboard.append([
             InlineKeyboardButton(
-                text=i18n("rates.back-to-top"),
-                callback_data=f"cr:{current_currency}:top"
+                text="🔝 Back to Top",
+                callback_data=f"cr:{currency}:top"
             )
         ])
     else:
@@ -114,15 +184,15 @@ def create_currency_tabs_keyboard(
         if show_all:
             keyboard.append([
                 InlineKeyboardButton(
-                    text=i18n("rates.back"),
-                    callback_data=f"cr:{current_currency}:top"
+                    text="🔙 Back",
+                    callback_data=f"cr:{currency}:top"
                 )
             ])
         else:
             keyboard.append([
                 InlineKeyboardButton(
-                    text=i18n("rates.more"), 
-                    callback_data=f"cr:{current_currency}:all"
+                    text="📋 Show All", 
+                    callback_data=f"cr:{currency}:all"
                 )
             ])
     
@@ -138,61 +208,27 @@ def format_rate_message(
     total_pages: int = 1
 ) -> str:
     """
-    Format currency rates message with timestamp and disclaimer.
-    
-    TODO: Implement smart truncation that preserves complete bank entries
-    instead of character-based cutting when message length exceeds limits.
+    Legacy format function for compatibility.
     """
-    if not rates:
-        return i18n("rates.no-rates")
-    
-    # Get current time for "last updated" with HH:MM format
-    current_time = datetime.now().strftime("%H:%M")
-    
-    message_parts = []
-    message_parts.append(f"💱 {i18n('rates.title')} - {currency}")
-    message_parts.append(f"🕐 {i18n('rates.last-updated', time=current_time)}")
-    message_parts.append("")
-    
-    # Show page info for paginated results
-    if show_all and total_pages > 1:
-        message_parts.append(f"📄 {i18n('rates.page', current=current_page, total=total_pages)}")
-    
-    message_parts.append(f"🏦 {i18n('rates.top-banks')}")
-    message_parts.append("")
-    
-    # Header row
-    header = f"{'Bank':<15} {'Buy':<8} {'Sell':<8} {'Δ':<6}"
-    message_parts.append(f"`{header}`")
-    message_parts.append("```")
-    
-    # Show rates for current view
-    display_rates = rates
-    if not show_all:
-        display_rates = rates[:DEFAULT_BANKS_DISPLAY]
-    
-    # Calculate delta (difference between sell and buy)
-    for rate in display_rates:
-        bank_name = rate.bank.name[:12] if len(rate.bank.name) > 12 else rate.bank.name
-        buy_rate = f"{float(getattr(rate, 'buy')):,.0f}"
-        sell_rate = f"{float(getattr(rate, 'sell')):,.0f}"
-        delta = float(getattr(rate, 'sell')) - float(getattr(rate, 'buy'))
-        delta_str = f"{delta:+.0f}"
-        
-        row = f"{bank_name:<15} {buy_rate:<8} {sell_rate:<8} {delta_str:<6}"
-        message_parts.append(row)
-    
-    message_parts.append("```")
-    
-    # Add summary if showing limited results
-    if not show_all and len(rates) > DEFAULT_BANKS_DISPLAY:
-        message_parts.append(f"_... and {len(rates) - DEFAULT_BANKS_DISPLAY} more banks_")
-    
-    # Add disclaimer
-    message_parts.append("")
-    message_parts.append(i18n('rates.disclaimer'))
-    
-    return "\n".join(message_parts)
+    return format_bank_table(
+        currency, rates, datetime.now().strftime("%H:%M"), 
+        i18n, mode='page' if show_all else 'top',
+        limit=DEFAULT_BANKS_DISPLAY if not show_all else None,
+        current_page=current_page, total_pages=total_pages
+    )
+
+
+def create_currency_tabs_keyboard(
+    i18n, 
+    current_currency: str = "USD", 
+    show_all: bool = False,
+    current_page: int = 1,
+    total_pages: int = 1
+) -> InlineKeyboardMarkup:
+    """
+    Legacy keyboard function for compatibility.
+    """
+    return build_tabs_with_paging(current_currency, current_page, total_pages, i18n, show_all)
 
 
 @router.message(lambda message: message.text and any(
@@ -217,18 +253,15 @@ async def current_rates_handler(message: Message, i18n, db_session, **kwargs):
     await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("cr:"))
+@router.callback_query(F.data.startswith("cr:"))
 async def currency_rates_callback_handler(callback_query: CallbackQuery, i18n, db_session, **kwargs):
     """
-    Handle currency rates callback queries with improved SHA256-based change detection.
+    Handle currency rates callback queries with paging support.
     
     Supports:
     - cr:USD:top - Show top banks for USD
     - cr:USD:all - Show all banks for USD (first page)
     - cr:USD:p2 - Show page 2 for USD
-    
-    TODO: Implement rate change highlighting when WebSocket updates are available
-    to show which bank rates have changed since last view.
     """
     try:
         # Parse callback data: cr:USD:top, cr:USD:all, or cr:USD:p2
@@ -248,21 +281,25 @@ async def currency_rates_callback_handler(callback_query: CallbackQuery, i18n, d
             await callback_query.answer("❌ Unsupported currency")
             return
         
-        # Parse mode/page
+        # Parse mode/page using the simplified logic from user request
         show_all = False
-        current_page = 1
+        page = 1
+        mode = "top"
         
         if mode_or_page == "top":
             show_all = False
+            mode = "top"
         elif mode_or_page == "all":
             show_all = True
-            current_page = 1
+            page = 1
+            mode = "page"
         elif mode_or_page.startswith("p"):
             show_all = True
             try:
-                current_page = int(mode_or_page[1:])
-                if current_page < 1:
-                    current_page = 1
+                page = int(mode_or_page[1:])
+                if page < 1:
+                    page = 1
+                mode = "page"
             except ValueError:
                 await callback_query.answer("❌ Invalid page number")
                 return
@@ -277,34 +314,25 @@ async def currency_rates_callback_handler(callback_query: CallbackQuery, i18n, d
         
         if not all_rates:
             text = format_rate_message([], currency, i18n, show_all=show_all)
-            keyboard = create_currency_tabs_keyboard(i18n, currency, show_all=show_all)
+            keyboard = build_tabs_with_paging(currency, 1, 1, i18n, show_all=show_all)
         else:
-            # Calculate pagination for full view
             if show_all:
-                total_pages = calculate_message_pages(all_rates, BANKS_PER_PAGE)
-                
-                # Validate page number
-                if current_page > total_pages:
-                    current_page = total_pages
-                
-                # Get rates for current page
-                page_rates = get_page_rates(all_rates, current_page, BANKS_PER_PAGE)
+                # Use paging utility
+                page_rates, current_page, total_pages = paginate(all_rates, page, BANKS_PER_PAGE)
                 
                 # Format message with page information
-                text = format_rate_message(
-                    page_rates, currency, i18n, 
-                    show_all=True, current_page=current_page, total_pages=total_pages
+                text = format_bank_table(
+                    currency, page_rates, datetime.now().strftime("%H:%M"), 
+                    i18n, mode='page', limit=len(page_rates),
+                    current_page=current_page, total_pages=total_pages
                 )
                 
                 # Create keyboard with pagination
-                keyboard = create_currency_tabs_keyboard(
-                    i18n, currency, show_all=True, 
-                    current_page=current_page, total_pages=total_pages
-                )
+                keyboard = build_tabs_with_paging(currency, current_page, total_pages, i18n, show_all=True)
             else:
                 # Show top banks only
-                text = format_rate_message(all_rates, currency, i18n, show_all=False)
-                keyboard = create_currency_tabs_keyboard(i18n, currency, show_all=False)
+                text = format_bank_table(currency, all_rates, datetime.now().strftime("%H:%M"), i18n, mode='top', limit=DEFAULT_BANKS_DISPLAY)
+                keyboard = build_tabs_with_paging(currency, 1, 1, i18n, show_all=False)
         
         # Check if content has changed using SHA256 (improved from MD5)
         if not callback_query.message or not callback_query.from_user:

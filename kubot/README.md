@@ -16,7 +16,7 @@ Telegram bot for real-time currency exchange rates in Uzbekistan with multi-lang
 
    git clone <repository-url>- **TWA**: Next.js 14 + i18next
 
-   cd fxbot- **Database**: PostgreSQL 16
+   cd kubot- **Database**: PostgreSQL 16
 
    ```- **Collectors**: APScheduler + httpx
 

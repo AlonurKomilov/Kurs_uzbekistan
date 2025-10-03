@@ -85,7 +85,7 @@ cleanup() {
         [ -f "$pidfile" ] && kill $(cat "$pidfile") 2>/dev/null || true
         rm -f "$pidfile"
     done
-    docker stop fxbot-postgres 2>/dev/null || true
+    docker stop kubot-postgres 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -120,7 +120,7 @@ success "API started"
 
 # Start Bot
 info "Starting Bot..."
-export PYTHONPATH="/workspaces/Kurs_uzbekistan/fxbot:$PYTHONPATH"
+export PYTHONPATH="/workspaces/Kurs_uzbekistan/kubot:$PYTHONPATH"
 python bot/main.py > logs/bot.log 2>&1 &
 echo $! > pids/bot.pid
 sleep 3
@@ -128,7 +128,7 @@ success "Bot started"
 
 # Start Collectors
 info "Starting Collectors..."
-export PYTHONPATH="/workspaces/Kurs_uzbekistan/fxbot:$PYTHONPATH"
+export PYTHONPATH="/workspaces/Kurs_uzbekistan/kubot:$PYTHONPATH"
 python collectors/main.py > logs/collectors.log 2>&1 &
 echo $! > pids/collectors.pid
 sleep 2

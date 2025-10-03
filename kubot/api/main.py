@@ -1,11 +1,13 @@
-import hashlib
-import hmac
-import json
-import urllib.parse
 from datetime import datetime
 from typing import Optional, List, Literal
 from decimal import Decimal
 import os
+import logging
+
+# Sentry integration
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
 from fastapi import FastAPI, HTTPException, Depends, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +19,20 @@ from sqlalchemy import select, and_, func, desc
 from dotenv import load_dotenv
 load_dotenv()
 
+# Initialize Sentry if DSN is provided
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            FastApiIntegration(auto_enabling_integrations=False),
+            SqlalchemyIntegration(),
+        ],
+        traces_sample_rate=0.1,  # Adjust based on traffic
+        environment=os.getenv("ENVIRONMENT", "development"),
+    )
+    logging.info("Sentry initialized for error tracking")
+
 # Import our core models and infrastructure
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,6 +40,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.models import User, Bank, BankRate
 from core.repos import UserRepository, BankRatesRepo
 from infrastructure.db import get_session, init_db
+from api.utils.telegram_auth import verify_init_data
 
 app = FastAPI(title="KUBot API", version="1.0.0")
 
@@ -65,79 +82,23 @@ class BankRateResponse(BaseModel):
     sell: Decimal
     fetched_at: datetime
 
-# HMAC verification helper
-def verify_telegram_init_data(init_data: str, bot_token: str) -> dict:
-    """
-    Verify Telegram WebApp initData using HMAC-SHA256.
-    Returns parsed data if valid, raises HTTPException if invalid.
-    """
-    if not init_data or not bot_token:
-        raise HTTPException(status_code=401, detail="Missing initData or bot token")
-    
-    try:
-        # Parse the init data
-        parsed_data = urllib.parse.parse_qs(init_data)
-        
-        # Extract hash and data
-        received_hash = parsed_data.get('hash', [''])[0]
-        if not received_hash:
-            raise HTTPException(status_code=401, detail="Missing hash in initData")
-        
-        # Remove hash from data and sort
-        data_check_arr = []
-        for key, values in parsed_data.items():
-            if key != 'hash':
-                data_check_arr.append(f"{key}={values[0]}")
-        data_check_arr.sort()
-        data_check_string = '\n'.join(data_check_arr)
-        
-        # Create secret key: HMAC-SHA256(bot_token, "WebAppData")
-        secret_key = hmac.new(
-            "WebAppData".encode(), 
-            bot_token.encode(), 
-            hashlib.sha256
-        ).digest()
-        
-        # Calculate expected hash
-        expected_hash = hmac.new(
-            secret_key,
-            data_check_string.encode(),
-            hashlib.sha256
-        ).hexdigest()
-        
-        # Compare hashes
-        if not hmac.compare_digest(received_hash, expected_hash):
-            raise HTTPException(status_code=401, detail="Invalid initData signature")
-        
-        # Parse user data
-        user_data = parsed_data.get('user', [''])[0]
-        if not user_data:
-            raise HTTPException(status_code=401, detail="Missing user data in initData")
-        
-        try:
-            user_info = json.loads(user_data)
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=401, detail="Invalid user data format")
-        
-        return user_info
-        
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise
-        raise HTTPException(status_code=401, detail=f"initData verification failed: {str(e)}")
+# Authentication dependency
+def auth_dep(x_telegram_webapp_data: str = Header(None, alias="X-Telegram-WebApp-Data")):
+    """Verify Telegram WebApp initData and return parsed auth data."""
+    return verify_init_data(x_telegram_webapp_data, BOT_TOKEN)
 
 # Dependency to get current user from Telegram WebApp data
 async def get_current_user(
-    x_telegram_webapp_data: Optional[str] = Header(None, alias="X-Telegram-WebApp-Data"),
+    auth: dict = Depends(auth_dep),
     db: AsyncSession = Depends(get_session)
 ) -> User:
     """Extract and verify user from Telegram WebApp initData header."""
-    if not x_telegram_webapp_data:
-        raise HTTPException(status_code=401, detail="Missing X-Telegram-WebApp-Data header")
+    # Extract user data from auth dict
+    user_data = auth.get('user')
+    if not user_data:
+        raise HTTPException(status_code=401, detail="Missing user data in initData")
     
-    user_info = verify_telegram_init_data(x_telegram_webapp_data, BOT_TOKEN)
-    tg_user_id = user_info.get('id')
-    
+    tg_user_id = user_data.get('id')
     if not tg_user_id:
         raise HTTPException(status_code=401, detail="Missing user ID in initData")
     
@@ -157,7 +118,7 @@ async def root():
 
 @app.get("/health")
 async def health(session: AsyncSession = Depends(get_session)):
-    """Enhanced health check endpoint with database connectivity."""
+    """Enhanced health check endpoint with database connectivity and monitoring status."""
     try:
         # Check database connectivity
         result = await session.execute(select(func.count()).select_from(User))
@@ -173,22 +134,38 @@ async def health(session: AsyncSession = Depends(get_session)):
         recent_rate_count = recent_rates.scalar()
         
         return {
+            "ok": True,
+            "service": "api", 
+            "time": datetime.utcnow().isoformat(),
             "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
             "database": {
                 "connected": True,
                 "users_count": user_count,
                 "recent_rates_count": recent_rate_count
             },
+            "monitoring": {
+                "sentry_enabled": SENTRY_DSN is not None,
+                "environment": os.getenv("ENVIRONMENT", "development")
+            },
             "version": "1.0.0"
         }
     except Exception as e:
+        # Report to Sentry if available
+        if SENTRY_DSN:
+            sentry_sdk.capture_exception(e)
+        
         return {
+            "ok": False,
+            "service": "api",
+            "time": datetime.utcnow().isoformat(), 
             "status": "unhealthy",
-            "timestamp": datetime.utcnow().isoformat(),
             "database": {
                 "connected": False,
                 "error": str(e)
+            },
+            "monitoring": {
+                "sentry_enabled": SENTRY_DSN is not None,
+                "environment": os.getenv("ENVIRONMENT", "development")
             },
             "version": "1.0.0"
         }
@@ -206,23 +183,21 @@ async def get_me(current_user: User = Depends(get_current_user)):
         lang=getattr(current_user, 'lang')
     )
 
-@app.post("/api/me/lang", response_model=UserResponse)
-async def update_lang(
-    lang_request: UpdateLangRequest,
+@app.post("/api/me/lang")
+async def set_lang(
+    payload: dict,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
     """Update user language preference."""
+    tg_id = getattr(current_user, 'tg_user_id')
+    lang = payload.get("lang")
+    if lang not in ("uz_cy", "ru", "en"):
+        raise HTTPException(400, "unsupported lang")
+    
     user_repo = UserRepository(db)
-    updated_user = await user_repo.update_language(getattr(current_user, 'tg_user_id'), lang_request.lang)
-    
-    if not updated_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    return UserResponse(
-        tg_user_id=getattr(updated_user, 'tg_user_id'),
-        lang=getattr(updated_user, 'lang')
-    )
+    await user_repo.update_language(tg_id, lang)
+    return {"ok": True}
 
 @app.get("/api/rates", response_model=List[RateResponse])
 async def get_rates(

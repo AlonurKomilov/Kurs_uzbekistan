@@ -9,6 +9,10 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
+# Sentry integration
+import sentry_sdk
+from sentry_sdk.integrations.logging import LoggingIntegration
+
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -18,6 +22,18 @@ from bot.handlers import setup_handlers
 
 # Load environment variables
 load_dotenv()
+
+# Initialize Sentry if DSN is provided
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+        ],
+        traces_sample_rate=0.1,
+        environment=os.getenv("ENVIRONMENT", "development"),
+    )
 
 # Configure logging with more detailed format
 logging.basicConfig(
@@ -45,13 +61,33 @@ dp = Dispatcher()
 
 
 async def health_monitor():
-    """Periodic health monitoring task."""
+    """Periodic health monitoring and heartbeat logging for bot."""
+    heartbeat_count = 0
     while True:
         try:
             await asyncio.sleep(300)  # Every 5 minutes
-            logger.info(f"Bot health check - Status: Running, Time: {datetime.now().isoformat()}")
+            heartbeat_count += 1
+            
+            # Heartbeat log with service information
+            logger.info(
+                f"🔔 Bot heartbeat #{heartbeat_count} - "
+                f"Service: bot, Status: Running, "
+                f"Time: {datetime.now().isoformat()}, "
+                f"Sentry: {'enabled' if SENTRY_DSN else 'disabled'}"
+            )
+            
+            # Additional health metrics every 30 minutes (6 heartbeats)
+            if heartbeat_count % 6 == 0:
+                logger.info(
+                    f"📊 Bot health report - "
+                    f"Uptime heartbeats: {heartbeat_count}, "
+                    f"Environment: {os.getenv('ENVIRONMENT', 'development')}"
+                )
+                
         except Exception as e:
-            logger.error(f"Health monitor error: {e}")
+            logger.error(f"❌ Health monitor error: {e}")
+            if SENTRY_DSN:
+                sentry_sdk.capture_exception(e)
 
 
 async def main():

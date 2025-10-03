@@ -1,5 +1,5 @@
 """
-Scheduler for daily digest notifications.
+Scheduler for daily digest notifications with enhanced retry and batching.
 """
 import asyncio
 import logging
@@ -16,10 +16,12 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter, TelegramBadRequest
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
 
 from core.repos import UserRepository
 from core.rates_service import RatesService
 from infrastructure.db import get_session
+from bot.tasks.digest import send_daily_digest as enhanced_send_daily_digest
 
 
 logger = logging.getLogger(__name__)
@@ -54,55 +56,59 @@ class DigestScheduler:
         logger.info("Digest scheduler stopped")
     
     async def send_daily_digest(self):
-        """Send daily digest to all subscribed users."""
-        logger.info("Starting daily digest broadcast")
+        """Send daily digest using enhanced batching with retry logic."""
+        logger.info("🕘 Starting scheduled daily digest broadcast")
         
         try:
-            async for session in get_session():
-                rates_service = RatesService(session)
-                user_repo = UserRepository(session)
-                
-                # Get rates bundle
-                bundle = await rates_service.get_daily_bundle()
-                if not bundle:
-                    logger.warning("No rates data available for digest")
-                    return
-                
-                # Get all subscribed users
-                subscribed_users = await user_repo.get_subscribed_users()
-                if not subscribed_users:
-                    logger.info("No subscribed users found")
-                    return
-                
-                logger.info(f"Found {len(subscribed_users)} subscribed users")
-                
-                # Group users by language
-                users_by_lang = defaultdict(list)
-                for user in subscribed_users:
-                    users_by_lang[user.lang].append(user)
-                
-                # Send digest for each language
-                total_sent = 0
-                total_errors = 0
-                
-                for lang, users in users_by_lang.items():
-                    sent, errors = await self._send_digest_to_language_group(
-                        bundle, lang, users, rates_service
-                    )
-                    total_sent += sent
-                    total_errors += errors
-                
+            # Use the enhanced digest sender with batching and retry logic
+            stats = await enhanced_send_daily_digest()
+            
+            # Log comprehensive stats
+            success_rate = 0
+            if stats.get('total_users', 0) > 0:
+                success_rate = (stats.get('successful_sends', 0) / stats['total_users']) * 100
+            
+            logger.info(
+                f"📊 Daily digest completed: "
+                f"Users: {stats.get('total_users', 0)}, "
+                f"Success: {stats.get('successful_sends', 0)} ({success_rate:.1f}%), "
+                f"Blocked: {stats.get('blocked_users', 0)}, "
+                f"Failed: {stats.get('failed_sends', 0)}, "
+                f"Batches: {stats.get('batches_processed', 0)}, "
+                f"Duration: {stats.get('duration_seconds', 0):.1f}s"
+            )
+            
+            # Log language breakdown
+            languages = stats.get('languages', {})
+            for lang, lang_stats in languages.items():
                 logger.info(
-                    f"Daily digest completed: {total_sent} sent, {total_errors} errors"
+                    f"📈 {lang.upper()}: {lang_stats.get('successful', 0)}/{lang_stats.get('total', 0)} "
+                    f"(blocked: {lang_stats.get('blocked', 0)})"
                 )
-                
-                # Commit session to save any subscription updates
-                await session.commit()
-                break  # Exit the async generator
-                
+            
+            if 'error' in stats:
+                logger.error(f"❌ Digest error: {stats['error']}")
+            
         except Exception as e:
-            logger.error(f"Error in daily digest: {e}", exc_info=True)
+            logger.error(f"💥 Fatal error in scheduled digest: {e}", exc_info=True)
     
+    @retry(
+        wait=wait_exponential(multiplier=1, min=1, max=60),
+        stop=stop_after_attempt(3),
+        retry=retry_if_exception_type(TelegramRetryAfter)
+    )
+    async def _send_message_with_retry(self, chat_id: int, text: str, **kwargs) -> bool:
+        """Send single message with retry logic for rate limits."""
+        try:
+            await self.bot.send_message(chat_id, text, **kwargs)
+            return True
+        except (TelegramForbiddenError, TelegramBadRequest):
+            # Don't retry for these errors
+            return False
+        except TelegramRetryAfter:
+            # Let tenacity handle the retry
+            raise
+
     async def _send_digest_to_language_group(
         self, 
         bundle: Dict, 
