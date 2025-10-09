@@ -79,6 +79,7 @@ def get_validated_twa_url(base_url: str, default: str = "http://localhost:3000")
         '127.0.0.1',
         'kubot.uz',
         'www.kubot.uz',
+        'devtunnels.ms',  # VS Code Dev Tunnels
     ]
     
     if base_url and validate_twa_url(base_url, whitelist):

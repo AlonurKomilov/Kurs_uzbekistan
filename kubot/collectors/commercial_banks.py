@@ -190,6 +190,7 @@ def _parse_kapitalbank_rates(html: str) -> List[Tuple[str, float, float]]:
         
         # Find all rate containers
         rate_boxes = soup.find_all('div', class_='kapitalbank_currency_tablo_rate_box')
+        logger.info(f"Kapitalbank: Found {len(rate_boxes)} rate boxes in HTML (length: {len(html)})")
         
         for box in rate_boxes:
             try:
@@ -217,15 +218,17 @@ def _parse_kapitalbank_rates(html: str) -> List[Tuple[str, float, float]]:
                 # Use same value for buy/sell since we only have one value
                 if rate > 100 and rate < 100000:
                     rates.append((code, rate, rate))
-                    logger.debug(f"Kapitalbank {code}: rate={rate}")
+                    logger.info(f"Kapitalbank {code}: Successfully parsed rate={rate}")
+                else:
+                    logger.warning(f"Kapitalbank {code}: Rate {rate} out of range (100-100000)")
                     
             except (ValueError, AttributeError) as e:
-                logger.debug(f"Error parsing Kapitalbank rate box: {e}")
+                logger.warning(f"Error parsing Kapitalbank rate box: {e}")
                 continue
         
         # If no rates found with primary method, try fallback to tables
         if not rates:
-            logger.warning("Kapitalbank: Primary parsing failed, trying table fallback")
+            logger.warning(f"Kapitalbank: Primary parsing failed (found {len(rate_boxes)} boxes but 0 rates), trying table fallback")
             tables = soup.find_all('table')
             for table in tables:
                 rows = table.find_all('tr')
