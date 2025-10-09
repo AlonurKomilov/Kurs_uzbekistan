@@ -105,9 +105,10 @@ async def live_rates_handler(message: Message, i18n, user_repo: UserRepository, 
     # Get user to fetch their language preference
     user = await user_repo.get_or_create_user(message.from_user.id)
     
-    # Get TWA base URL from environment or use default
+    # Get validated TWA base URL from environment
     import os
-    twa_base_url = os.getenv("TWA_BASE_URL", "http://localhost:3000")
+    from core.validation import get_validated_twa_url
+    twa_base_url = get_validated_twa_url(os.getenv("TWA_BASE_URL", ""))
     
     # Create TWA URL with user's language
     twa_url = f"{twa_base_url}/twa?lang={user.lang}"
@@ -132,7 +133,14 @@ async def live_rates_handler(message: Message, i18n, user_repo: UserRepository, 
     )
 
 
-@router.message(lambda message: message.text and ("Subscribe" in message.text or "Обуна бўлиш" in message.text or "Подписаться" in message.text or "Unsubscribe" in message.text or "беkor қилиш" in message.text or "Отписаться" in message.text))
+@router.message(lambda message: message.text and (
+    "Subscribe" in message.text or 
+    "Unsubscribe" in message.text or
+    "Обуна" in message.text or  # Uzbek
+    "беков" in message.text or
+    "Подписаться" in message.text or  # Russian
+    "Отписаться" in message.text
+))
 async def subscription_handler(message: Message, i18n, user_repo: UserRepository):
     """Handle subscription toggle."""
     if not message.from_user:

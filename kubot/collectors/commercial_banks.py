@@ -35,8 +35,8 @@ from infrastructure.db import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-# Supported currency codes we want to track
-SUPPORTED_CURRENCIES = {"USD", "EUR", "RUB"}
+# Supported currency codes we want to track (matching CBU collector)
+SUPPORTED_CURRENCIES = {"USD", "EUR", "RUB", "GBP", "JPY", "CHF", "KRW", "CNY"}
 
 # Bank configurations with their API endpoints and parsing methods
 BANK_CONFIGS = {
@@ -64,8 +64,8 @@ BANK_CONFIGS = {
     "kapitalbank": {
         "name": "Kapitalbank",
         "slug": "kapitalbank", 
-        "url": "https://kapitalbank.uz/currency",
-        "method": "api_json",
+        "url": "https://kapitalbank.uz/uz/services/exchange-rates/",
+        "method": "html_scraping",
         "website": "https://kapitalbank.uz"
     },
     "qishloq": {
@@ -78,16 +78,16 @@ BANK_CONFIGS = {
     "tbc": {
         "name": "TBC Bank Uzbekistan",
         "slug": "tbc", 
-        "url": "https://www.tbcbank.uz/",
+        "url": "https://tbcbank.uz/",
         "method": "api_json",
-        "website": "https://www.tbcbank.uz"
+        "website": "https://tbcbank.uz"
     },
     "turonbank": {
         "name": "Turonbank",
         "slug": "turonbank",
-        "url": "https://www.turonbank.uz/",
+        "url": "https://turonbank.uz/",
         "method": "html_scraping", 
-        "website": "https://www.turonbank.uz"
+        "website": "https://turonbank.uz"
     },
     "universal": {
         "name": "Universal Bank",
@@ -119,7 +119,12 @@ async def _fetch_bank_data(bank_slug: str, url: str, method: str) -> Optional[Di
     }
     
     try:
-        async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
+        async with httpx.AsyncClient(
+            timeout=20.0, 
+            headers=headers,
+            follow_redirects=True,  # Enable automatic redirect following
+            verify=False  # Disable SSL verification for banks with cert issues
+        ) as client:
             response = await client.get(url)
             response.raise_for_status()
             
@@ -173,22 +178,85 @@ def _parse_ipoteka_rates(data: Dict) -> List[Tuple[str, float, float]]:
     return rates
 
 
-def _parse_kapitalbank_rates(data: Dict) -> List[Tuple[str, float, float]]:
-    """Parse Kapitalbank rates from JSON response."""
+def _parse_kapitalbank_rates(html: str) -> List[Tuple[str, float, float]]:
+    """Parse Kapitalbank rates from HTML scraping."""
     rates = []
     try:
-        json_data = data.get("data", {})
-        currencies = json_data.get("currencies", [])
-        for item in currencies:
-            code = item.get("code", "").upper()
-            if code in SUPPORTED_CURRENCIES:
-                buy = float(item.get("buy", 0))
-                sell = float(item.get("sell", 0))
-                if buy > 0 and sell > 0:
-                    rates.append((code, buy, sell))
-                    logger.debug(f"Kapitalbank {code}: buy={buy}, sell={sell}")
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Kapitalbank uses specific div structure for rates
+        # Structure: <div class="kapitalbank_currency_tablo_type_box">USD</div>
+        #            <div class="kapitalbank_currency_tablo_type_value">12135</div>
+        
+        # Find all rate containers
+        rate_boxes = soup.find_all('div', class_='kapitalbank_currency_tablo_rate_box')
+        
+        for box in rate_boxes:
+            try:
+                # Find currency code
+                code_div = box.find('div', class_='kapitalbank_currency_tablo_type_box')
+                if not code_div:
+                    continue
+                    
+                code = code_div.get_text(strip=True).upper()
+                
+                # Only process supported currencies
+                if code not in SUPPORTED_CURRENCIES:
+                    continue
+                
+                # Find the rate value
+                value_div = box.find('div', class_='kapitalbank_currency_tablo_type_value')
+                if not value_div:
+                    continue
+                
+                # Extract number (remove commas and spaces)
+                rate_text = value_div.get_text(strip=True).replace(',', '').replace(' ', '')
+                rate = float(rate_text)
+                
+                # Kapitalbank shows selling rate (bank sells to customer)
+                # Use same value for buy/sell since we only have one value
+                if rate > 100 and rate < 100000:
+                    rates.append((code, rate, rate))
+                    logger.debug(f"Kapitalbank {code}: rate={rate}")
+                    
+            except (ValueError, AttributeError) as e:
+                logger.debug(f"Error parsing Kapitalbank rate box: {e}")
+                continue
+        
+        # If no rates found with primary method, try fallback to tables
+        if not rates:
+            logger.warning("Kapitalbank: Primary parsing failed, trying table fallback")
+            tables = soup.find_all('table')
+            for table in tables:
+                rows = table.find_all('tr')
+                for row in rows:
+                    cells = row.find_all(['td', 'th'])
+                    if len(cells) >= 2:
+                        text = ' '.join([cell.get_text(strip=True) for cell in cells])
+                        
+                        for code in SUPPORTED_CURRENCIES:
+                            if code in text.upper():
+                                try:
+                                    # Extract numbers from cells
+                                    numbers = []
+                                    for cell in cells:
+                                        cell_text = cell.get_text(strip=True)
+                                        # Remove non-numeric characters except dot
+                                        num_text = re.sub(r'[^\d.]', '', cell_text.replace(',', ''))
+                                        if num_text and len(num_text) >= 4:
+                                            numbers.append(float(num_text))
+                                    
+                                    if numbers:
+                                        rate = numbers[0]
+                                        if rate > 100 and rate < 100000:
+                                            rates.append((code, rate, rate))
+                                            logger.debug(f"Kapitalbank {code} (table): rate={rate}")
+                                            break
+                                except (ValueError, IndexError):
+                                    continue
+                            
     except Exception as e:
-        logger.error(f"Error parsing Kapitalbank rates: {e}")
+        logger.error(f"Error parsing Kapitalbank HTML: {e}")
     return rates
 
 
@@ -274,11 +342,11 @@ def _parse_qishloq_html(html: str) -> List[Tuple[str, float, float]]:
         soup = BeautifulSoup(html, 'html.parser')
         
         # Look for exchange rates section
-        rate_sections = soup.find_all(['div', 'section'], class_=re.compile(r'exchange|currency|rate'))
+        rate_sections = soup.find_all(['div', 'section'], attrs={'class': re.compile(r'exchange|currency|rate')})  # type: ignore[arg-type]
         
         for section in rate_sections:
             # Look for currency data patterns
-            currency_items = section.find_all(['div', 'span', 'td'], string=re.compile(r'USD|EUR|RUB'))
+            currency_items = section.find_all(['div', 'span', 'td'], string=re.compile(r'USD|EUR|RUB'))  # type: ignore[arg-type]
             
             for item in currency_items:
                 parent = item.parent
@@ -343,8 +411,6 @@ def _parse_bank_rates(bank_slug: str, response_data: Dict) -> List[Tuple[str, fl
             return _parse_nbu_rates(data)
         elif bank_slug == "ipoteka":
             return _parse_ipoteka_rates(data)
-        elif bank_slug == "kapitalbank":
-            return _parse_kapitalbank_rates(data)
         elif bank_slug == "tbc":
             return _parse_tbc_rates(data)
         elif bank_slug == "universal":
@@ -355,6 +421,8 @@ def _parse_bank_rates(bank_slug: str, response_data: Dict) -> List[Tuple[str, fl
         
         if bank_slug == "hamkorbank":
             return _parse_hamkorbank_html(html)
+        elif bank_slug == "kapitalbank":
+            return _parse_kapitalbank_rates(html)
         elif bank_slug == "qishloq":
             return _parse_qishloq_html(html)
         elif bank_slug == "turonbank":
@@ -374,7 +442,8 @@ async def _ensure_bank_exists(repo: BankRatesRepo, bank_config: Dict) -> int:
             website=bank_config["website"]
         )
         logger.info(f"Created new bank: {bank.name} (ID: {bank.id})")
-    return bank.id
+    # Type checker doesn't understand SQLAlchemy attributes, but at runtime bank.id is an int
+    return bank.id  # type: ignore
 
 
 async def collect_bank_rates(bank_slug: str) -> Dict:
@@ -433,7 +502,12 @@ async def collect_bank_rates(bank_slug: str) -> Dict:
 
 
 async def collect_commercial_banks_rates():
-    """Collect rates from all configured commercial banks."""
+    """Collect rates from all configured commercial banks with monitoring."""
+    from core.monitoring import CollectorMonitor
+    
+    monitor = CollectorMonitor("Commercial Banks")
+    monitor.start()
+    
     logger.info("🏦 Starting commercial banks rates collection...")
     
     start_time = datetime.utcnow()
@@ -478,6 +552,16 @@ async def collect_commercial_banks_rates():
         logger.warning(f"❌ Failed banks: {[b['bank'] for b in failed_banks]}")
         for failure in failed_banks:
             logger.error(f"  {failure['bank']}: {', '.join(failure['errors'])}")
+            monitor.record_failure()
+    
+    # Record metrics
+    monitor.record_metric('total_banks', total_banks)
+    monitor.record_metric('successful_banks', successful_banks)
+    monitor.record_metric('total_rates', total_rates)
+    monitor.record_metric('failed_banks_count', len(failed_banks))
+    
+    # Finish monitoring
+    monitor.finish(alert_on_failure=True)
     
     return {
         "total_banks": total_banks,

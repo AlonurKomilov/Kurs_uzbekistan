@@ -167,18 +167,12 @@ class BankRatesRepo:
 class CbuRatesRepo:
     """Repository for CBU (Central Bank of Uzbekistan) official exchange rates."""
     
-    def __init__(self, session: Optional[AsyncSession] = None):
-        self._own_session = session is None
+    def __init__(self, session: AsyncSession):
         self.session = session
     
     async def upsert_rate(self, code: str, rate: float, date_str: str | None = None, fetched_at: datetime | None = None):
         """Insert or update CBU rate with conflict resolution."""
-        if self._own_session:
-            async with SessionLocal() as session:
-                await self._upsert_in_session(session, code, rate, date_str, fetched_at)
-        else:
-            assert self.session is not None, "Session must be provided when not using own session"
-            await self._upsert_in_session(self.session, code, rate, date_str, fetched_at)
+        await self._upsert_in_session(self.session, code, rate, date_str, fetched_at)
     
     async def _upsert_in_session(self, session: AsyncSession, code: str, rate: float, date_str: str | None, fetched_at: datetime | None):
         """Perform upsert operation within a session."""
@@ -222,12 +216,7 @@ class CbuRatesRepo:
     
     async def get_latest_rates(self, codes: List[str] | None = None) -> List[CbuRate]:
         """Get latest CBU rates for specified currency codes."""
-        if self._own_session:
-            async with SessionLocal() as session:
-                return await self._get_latest_in_session(session, codes)
-        else:
-            assert self.session is not None, "Session must be provided when not using own session"
-            return await self._get_latest_in_session(self.session, codes)
+        return await self._get_latest_in_session(self.session, codes)
     
     async def _get_latest_in_session(self, session: AsyncSession, codes: List[str] | None) -> List[CbuRate]:
         """Get latest rates within a session."""
@@ -241,12 +230,7 @@ class CbuRatesRepo:
     
     async def get_latest_by_code(self, code: str) -> Optional[CbuRate]:
         """Get latest rate for a specific currency code."""
-        if self._own_session:
-            async with SessionLocal() as session:
-                return await self._get_latest_by_code_in_session(session, code)
-        else:
-            assert self.session is not None, "Session must be provided when not using own session"
-            return await self._get_latest_by_code_in_session(self.session, code)
+        return await self._get_latest_by_code_in_session(self.session, code)
     
     async def _get_latest_by_code_in_session(self, session: AsyncSession, code: str) -> Optional[CbuRate]:
         """Get latest rate for a specific currency code within a session."""
@@ -260,12 +244,7 @@ class CbuRatesRepo:
     
     async def get_by_code_and_date(self, code: str, rate_date: date) -> Optional[CbuRate]:
         """Get rate for specific currency code and date."""
-        if self._own_session:
-            async with SessionLocal() as session:
-                return await self._get_by_code_and_date_in_session(session, code, rate_date)
-        else:
-            assert self.session is not None, "Session must be provided when not using own session"
-            return await self._get_by_code_and_date_in_session(self.session, code, rate_date)
+        return await self._get_by_code_and_date_in_session(self.session, code, rate_date)
     
     async def _get_by_code_and_date_in_session(self, session: AsyncSession, code: str, rate_date: date) -> Optional[CbuRate]:
         """Get rate for specific currency code and date within a session."""

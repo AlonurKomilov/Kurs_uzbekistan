@@ -47,7 +47,7 @@ declare global {
   }
 }
 
-const CURRENCIES = ['USD', 'EUR', 'RUB'] as const;
+const CURRENCIES = ['USD', 'EUR', 'RUB', 'GBP', 'JPY', 'CHF', 'KRW', 'CNY'] as const;
 type Currency = typeof CURRENCIES[number];
 
 const LANGUAGES = [

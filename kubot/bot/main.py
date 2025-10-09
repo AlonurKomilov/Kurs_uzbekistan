@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import middlewares and handlers
 from bot.middlewares import DatabaseMiddleware, I18nMiddleware
+from bot.middlewares.error_handler import ErrorHandlerMiddleware, error_handler
 from bot.handlers import setup_handlers
 
 # Load environment variables
@@ -102,13 +103,20 @@ async def main():
         logger.info("✅ Database initialized")
         
         # Setup middlewares
-        # Database middleware must come first to inject session
+        # Error handler middleware comes first
+        dp.message.middleware(ErrorHandlerMiddleware())
+        dp.callback_query.middleware(ErrorHandlerMiddleware())
+        
+        # Database middleware must come after error handler to inject session
         dp.message.middleware(DatabaseMiddleware())
         dp.callback_query.middleware(DatabaseMiddleware())
         
         # I18n middleware comes after database to use user language
         dp.message.middleware(I18nMiddleware())
         dp.callback_query.middleware(I18nMiddleware())
+        
+        # Register global error handler
+        dp.errors.register(error_handler)
         
         # Register handlers
         setup_handlers(dp)

@@ -25,7 +25,7 @@ if SENTRY_DSN:
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=[
-            FastApiIntegration(auto_enabling_integrations=False),
+            FastApiIntegration(),
             SqlalchemyIntegration(),
         ],
         traces_sample_rate=0.1,  # Adjust based on traffic
@@ -43,6 +43,10 @@ from infrastructure.db import get_session, init_db
 from api.utils.telegram_auth import verify_init_data
 
 app = FastAPI(title="KUBot API", version="1.0.0")
+
+# Rate limiting middleware
+from api.middleware.rate_limit import RateLimitMiddleware
+app.add_middleware(RateLimitMiddleware, requests_per_minute=60)
 
 # CORS middleware - allow TWA dev server
 app.add_middleware(

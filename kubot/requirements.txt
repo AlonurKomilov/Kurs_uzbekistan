@@ -7,10 +7,24 @@ alembic>=1.12.0
 apscheduler>=3.10.0
 tenacity>=8.0.0
 
+# HTTP and Web Scraping
+httpx>=0.24.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# Monitoring and Error Tracking
+sentry-sdk>=1.30.0
+
+# Internationalization
+fluent-runtime>=0.4.0
+
 # API Dependencies  
 fastapi>=0.100.0
 uvicorn[standard]>=0.23.0
+pydantic>=2.0.0
 
 # Development Dependencies (optional)
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-httpx>=0.21.0

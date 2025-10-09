@@ -91,12 +91,13 @@ class RatesService:
         """Get inline keyboard for digest message."""
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
         import os
+        from core.validation import get_validated_twa_url
         
         if user_lang is None:
             user_lang = lang
             
-        # Get TWA base URL
-        twa_base_url = os.getenv("TWA_BASE_URL", "http://localhost:3000")
+        # Get validated TWA base URL
+        twa_base_url = get_validated_twa_url(os.getenv("TWA_BASE_URL", ""))
         
         # Button texts
         button_texts = {
