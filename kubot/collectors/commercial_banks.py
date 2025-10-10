@@ -19,6 +19,8 @@ import asyncio
 import sys
 from pathlib import Path
 from datetime import datetime
+import requests
+import urllib3
 from typing import List, Dict, Optional, Tuple
 import httpx
 import json
@@ -26,6 +28,9 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 import logging
 from bs4 import BeautifulSoup
 import re
+
+# Disable SSL warnings for requests library
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -105,9 +110,39 @@ BANK_CONFIGS = {
     retry=retry_if_exception_type((httpx.HTTPError, httpx.TimeoutException)),
     reraise=True
 )
+def _fetch_kapitalbank_sync(url: str) -> str:
+    """
+    Fetch Kapitalbank HTML using requests library (sync).
+    httpx has issues with Brotli decompression, so we use requests instead.
+    """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+    }
+    
+    response = requests.get(url, headers=headers, timeout=20, verify=False)
+    response.raise_for_status()
+    logger.info(f"Kapitalbank: Fetched {len(response.text)} chars, encoding={response.encoding}")
+    return response.text
+
+
 async def _fetch_bank_data(bank_slug: str, url: str, method: str) -> Optional[Dict]:
     """Fetch bank rates data with retry mechanism."""
     logger.info(f"Fetching {bank_slug} rates from {url}")
+    
+    # Special handling for Kapitalbank - use requests instead of httpx
+    if bank_slug == "kapitalbank" and method == "html_scraping":
+        try:
+            # Run sync requests in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            html = await loop.run_in_executor(None, _fetch_kapitalbank_sync, url)
+            return {"type": "html", "data": html}
+        except Exception as e:
+            logger.error(f"Failed to fetch data from {bank_slug}: {e}")
+            raise
     
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -185,12 +220,14 @@ def _parse_kapitalbank_rates(html: str) -> List[Tuple[str, float, float]]:
         soup = BeautifulSoup(html, 'html.parser')
         
         # Kapitalbank uses specific div structure for rates
-        # Structure: <div class="kapitalbank_currency_tablo_type_box">USD</div>
-        #            <div class="kapitalbank_currency_tablo_type_value">12135</div>
+        # Structure: <div class="kapitalbank_currency_tablo_rate_box">
+        #              <div class="kapitalbank_currency_tablo_type_box">USD</div>
+        #              <div class="kapitalbank_currency_tablo_type_value">12135</div>
+        #            </div>
         
         # Find all rate containers
         rate_boxes = soup.find_all('div', class_='kapitalbank_currency_tablo_rate_box')
-        logger.info(f"Kapitalbank: Found {len(rate_boxes)} rate boxes in HTML (length: {len(html)})")
+        logger.info(f"Kapitalbank: Found {len(rate_boxes)} rate boxes")
         
         for box in rate_boxes:
             try:
