@@ -35,18 +35,18 @@ IPOTEKA_CONFIG = {
 }
 
 
-def fetch_json_sync() -> dict:
-    """Fetch Ipoteka Bank JSON data using requests library (sync)."""
+def fetch_html_sync() -> str:
+    """Fetch Ipoteka Bank HTML page using requests library (sync)."""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json, text/plain, */*',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     }
     
     response = requests.get(IPOTEKA_CONFIG["url"], headers=headers, timeout=20, verify=False)
     response.raise_for_status()
-    logger.info(f"✅ Fetched response, status={response.status_code}")
+    logger.info(f"✅ Fetched {len(response.text)} chars, status={response.status_code}")
     
-    return response.json()
+    return response.text
 
 
 async def fetch_ipoteka_rates() -> List[Tuple[str, float, float]]:
@@ -55,9 +55,9 @@ async def fetch_ipoteka_rates() -> List[Tuple[str, float, float]]:
     
     try:
         loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, fetch_json_sync)
+        html = await loop.run_in_executor(None, fetch_html_sync)
         
-        rates = parse_ipoteka_json(data)
+        rates = parse_ipoteka_html(html)
         logger.info(f"✅ Parsed {len(rates)} rates from Ipoteka")
         return rates
             
@@ -66,65 +66,89 @@ async def fetch_ipoteka_rates() -> List[Tuple[str, float, float]]:
         return []
 
 
-def parse_ipoteka_json(data: dict) -> List[Tuple[str, float, float]]:
-    """Parse Ipoteka Bank JSON to extract exchange rates."""
+def parse_ipoteka_html(html: str) -> List[Tuple[str, float, float]]:
+    """
+    Parse Ipoteka Bank HTML to extract exchange rates.
+    
+    Structure:
+    <td><b>USD</b></td>
+    <td>...<span>12 065</span>...</td>  <!-- buy rate -->
+    <td>...<span>12 200</span>...</td>  <!-- sell rate -->
+    
+    Args:
+        html: HTML content from Ipoteka website
+        
+    Returns:
+        List of (currency_code, buy_rate, sell_rate) tuples
+    """
     rates = []
+    seen_currencies = set()
     
     try:
-        # Try common JSON structures
-        if isinstance(data, list):
-            items = data
-        elif isinstance(data, dict) and 'data' in data:
-            items = data['data'] if isinstance(data['data'], list) else [data['data']]
-        elif isinstance(data, dict) and 'rates' in data:
-            items = data['rates'] if isinstance(data['rates'], list) else [data['rates']]
-        else:
-            items = [data]
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, 'html.parser')
         
-        for item in items:
+        # Find all <b> tags (currency codes)
+        currency_tags = soup.find_all('b')
+        logger.info(f"🔍 Found {len(currency_tags)} <b> tags")
+        
+        for tag in currency_tags:
             try:
-                # Look for currency code
-                code = None
-                for key in ['code', 'currency', 'ccy', 'Code', 'Currency']:
-                    if key in item:
-                        code = str(item[key]).upper()
-                        break
-                
-                if not code or code not in SUPPORTED_CURRENCIES:
+                code = tag.get_text(strip=True).upper()
+                if not code or code not in SUPPORTED_CURRENCIES or code in seen_currencies:
                     continue
                 
-                # Look for buy/sell rates
-                buy = sell = None
-                for buy_key in ['buy', 'buying', 'buy_rate', 'buyRate']:
-                    if buy_key in item:
-                        buy = float(item[buy_key])
-                        break
+                # Find parent <td> and then siblings
+                td = tag.find_parent('td')
+                if not td:
+                    continue
+                
+                # Get next two <td> siblings for buy and sell rates
+                next_tds = []
+                sibling = td.find_next_sibling('td')
+                while sibling and len(next_tds) < 2:
+                    next_tds.append(sibling)
+                    sibling = sibling.find_next_sibling('td')
+                
+                if len(next_tds) < 2:
+                    logger.debug(f"Not enough sibling <td> for {code}")
+                    continue
+                
+                # Extract rates from spans
+                buy_span = next_tds[0].find('span')
+                sell_span = next_tds[1].find('span')
+                
+                if not buy_span or not sell_span:
+                    logger.debug(f"Missing spans for {code}")
+                    continue
+                
+                buy_str = buy_span.get_text(strip=True).replace(' ', '').replace(',', '')
+                sell_str = sell_span.get_text(strip=True).replace(' ', '').replace(',', '')
+                
+                try:
+                    buy_rate = float(buy_str)
+                    sell_rate = float(sell_str)
+                    
+                    if buy_rate > 0 and sell_rate > 0:
+                        rates.append((code, buy_rate, sell_rate))
+                        seen_currencies.add(code)
+                        logger.debug(f"{code}: buy={buy_rate}, sell={sell_rate}")
                         
-                for sell_key in ['sell', 'selling', 'sell_rate', 'sellRate']:
-                    if sell_key in item:
-                        sell = float(item[sell_key])
-                        break
-                
-                # If no buy/sell, look for single rate
-                if buy is None and sell is None:
-                    for rate_key in ['rate', 'value', 'price']:
-                        if rate_key in item:
-                            rate = float(item[rate_key])
-                            buy = sell = rate
-                            break
-                
-                if buy and sell and buy > 0 and sell > 0:
-                    rates.append((code, buy, sell))
-                    logger.debug(f"{code}: buy={buy}, sell={sell}")
+                except ValueError as e:
+                    logger.debug(f"Failed to parse {code} rates: buy={buy_str}, sell={sell_str}, error={e}")
+                    continue
                     
             except Exception as e:
-                logger.debug(f"Failed to parse item: {e}")
+                logger.debug(f"Failed to parse currency tag: {e}")
                 continue
-                
+                    
     except Exception as e:
-        logger.error(f"❌ Error parsing Ipoteka JSON: {e}", exc_info=True)
+        logger.error(f"❌ Error parsing Ipoteka HTML: {e}", exc_info=True)
     
     return rates
+
+
+
 
 
 async def save_rates_to_db(rates: List[Tuple[str, float, float]]) -> None:
