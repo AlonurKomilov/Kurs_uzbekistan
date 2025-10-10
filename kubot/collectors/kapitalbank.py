@@ -192,36 +192,26 @@ async def save_rates_to_db(rates: List[Tuple[str, float, float]]) -> None:
             await session.rollback()
 
 
-async def main():
-    """Main collection loop."""
-    logger.info("🚀 Starting Kapitalbank collector...")
-    
-    collection_count = 0
-    
-    while True:
-        try:
-            collection_count += 1
-            logger.info(f"\n{'='*60}")
-            logger.info(f"🔄 Collection cycle #{collection_count} started")
-            logger.info(f"{'='*60}\n")
-            
-            # Fetch rates
-            rates = await fetch_kapitalbank_rates()
-            
-            # Save to database
-            if rates:
-                await save_rates_to_db(rates)
-                logger.info(f"✅ Collection cycle #{collection_count} completed successfully")
-            else:
-                logger.warning(f"⚠️ Collection cycle #{collection_count} completed with no rates")
-            
-        except Exception as e:
-            logger.error(f"❌ Collection cycle #{collection_count} failed: {e}", exc_info=True)
+async def collect():
+    """Main collection function."""
+    try:
+        logger.info("Starting Kapitalbank collection...")
         
-        # Wait 15 minutes before next collection
-        logger.info(f"\n⏰ Waiting 15 minutes before next collection...\n")
-        await asyncio.sleep(900)
+        # Fetch and parse rates
+        rates = await fetch_kapitalbank_rates()
+        
+        # Save to database
+        if rates:
+            await save_rates_to_db(rates)
+            return len(rates)
+        else:
+            logger.warning("No rates collected")
+            return 0
+            
+    except Exception as e:
+        logger.error(f"❌ Collection failed: {e}")
+        return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(collect())
