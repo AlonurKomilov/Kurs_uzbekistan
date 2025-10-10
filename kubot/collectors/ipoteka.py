@@ -11,9 +11,13 @@ from typing import List, Tuple
 import json
 
 import requests
+import urllib3
 
 from core.repos import BankRatesRepo
 from infrastructure.db import SessionLocal
+
+# Disable SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,7 +42,7 @@ def fetch_json_sync() -> dict:
         'Accept': 'application/json, text/plain, */*',
     }
     
-    response = requests.get(IPOTEKA_CONFIG["url"], headers=headers, timeout=20)
+    response = requests.get(IPOTEKA_CONFIG["url"], headers=headers, timeout=20, verify=False)
     response.raise_for_status()
     logger.info(f"✅ Fetched response, status={response.status_code}")
     

@@ -96,33 +96,20 @@ def parse_turonbank_html(html: str) -> List[Tuple[str, float, float]]:
                     if not code:
                         continue
                     
-                    # Extract numeric values
+                    # Extract numeric values from exchange-value spans
                     values = []
                     for col in cols:
                         try:
-                            text = col.get_text(strip=True).replace(' ', '')
-                            # Handle both US (12,080.50) and EU (12.080,50) formats
-                            # If there's a comma after more than 2 digits, it's a thousands separator (US format)
-                            # If there's a period after more than 2 digits, it's a thousands separator (EU format)
-                            if ',' in text and '.' in text:
-                                # Both present - determine which is decimal
-                                if text.rfind(',') > text.rfind('.'):
-                                    # Comma is last, so it's decimal separator (EU: 12.080,50)
-                                    text = text.replace('.', '').replace(',', '.')
-                                else:
-                                    # Period is last, so it's decimal separator (US: 12,080.50)
-                                    text = text.replace(',', '')
-                            elif ',' in text:
-                                # Only comma - could be thousands or decimal
-                                # If comma is followed by exactly 2 digits at end, it's decimal (EU: 12080,50)
-                                # Otherwise it's thousands (US: 12,080)
-                                import re
-                                if re.search(r',\d{2}$', text):
-                                    text = text.replace(',', '.')
-                                else:
-                                    text = text.replace(',', '')
-                            # If only period, keep as is (US: 12080.50)
+                            # Look specifically for exchange-value divs containing span tags
+                            exchange_div = col.find('div', class_='exchange-value')
+                            if not exchange_div:
+                                continue
                             
+                            span = exchange_div.find('span')
+                            if not span:
+                                continue
+                                
+                            text = span.get_text(strip=True).replace(' ', '').replace(',', '')
                             val = float(text)
                             if val > 0 and val < 1000000:  # Sanity check: rates should be under 1 million
                                 values.append(val)
@@ -131,10 +118,10 @@ def parse_turonbank_html(html: str) -> List[Tuple[str, float, float]]:
                     
                     if len(values) >= 2:
                         rates.append((code, values[0], values[1]))
-                        logger.debug(f"{code}: buy={values[0]}, sell={values[1]}")
+                        logger.info(f"✅ {code}: buy={values[0]}, sell={values[1]}")
                     elif len(values) == 1:
                         rates.append((code, values[0], values[0]))
-                        logger.debug(f"{code}: {values[0]}")
+                        logger.info(f"✅ {code}: {values[0]}")
                         
                 except Exception as e:
                     logger.debug(f"Failed to parse row: {e}")
