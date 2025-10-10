@@ -69,7 +69,7 @@ BANK_CONFIGS = {
     "kapitalbank": {
         "name": "Kapitalbank",
         "slug": "kapitalbank", 
-        "url": "https://kapitalbank.uz/uz/services/exchange-rates/",
+        "url": "https://kapitalbank.uz/en/services/exchange-rates/",
         "method": "html_scraping",
         "website": "https://kapitalbank.uz"
     },
@@ -83,21 +83,21 @@ BANK_CONFIGS = {
     "tbc": {
         "name": "TBC Bank Uzbekistan",
         "slug": "tbc", 
-        "url": "https://tbcbank.uz/",
+        "url": "https://tbcbank.uz/uz/currency/",
         "method": "api_json",
         "website": "https://tbcbank.uz"
     },
     "turonbank": {
         "name": "Turonbank",
         "slug": "turonbank",
-        "url": "https://turonbank.uz/",
+        "url": "https://turonbank.uz/en/services/exchange-rates/",
         "method": "html_scraping", 
         "website": "https://turonbank.uz"
     },
     "universal": {
         "name": "Universal Bank",
         "slug": "universal",
-        "url": "https://universalbank.uz/",
+        "url": "https://universalbank.uz/en/currency/",
         "method": "api_json",
         "website": "https://universalbank.uz"
     }
@@ -110,14 +110,15 @@ BANK_CONFIGS = {
     retry=retry_if_exception_type((httpx.HTTPError, httpx.TimeoutException)),
     reraise=True
 )
-def _fetch_kapitalbank_sync(url: str) -> str:
+def _fetch_with_requests_sync(bank_slug: str, url: str, method: str) -> Dict:
     """
-    Fetch Kapitalbank HTML using requests library (sync).
-    httpx has issues with Brotli decompression, so we use requests instead.
+    Fetch bank data using requests library (sync).
+    httpx has issues with Brotli decompression and some SSL certificates.
+    This is a more reliable alternative for problematic banks.
     """
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept': 'application/json, text/html, application/xhtml+xml, */*',
         'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1',
@@ -125,53 +126,27 @@ def _fetch_kapitalbank_sync(url: str) -> str:
     
     response = requests.get(url, headers=headers, timeout=20, verify=False)
     response.raise_for_status()
-    logger.info(f"Kapitalbank: Fetched {len(response.text)} chars, encoding={response.encoding}")
-    return response.text
+    
+    if method == "api_json":
+        data = response.json()
+        logger.info(f"{bank_slug}: Fetched JSON data, encoding={response.encoding}")
+        return {"type": "json", "data": data}
+    else:  # html_scraping
+        html = response.text
+        logger.info(f"{bank_slug}: Fetched {len(html)} chars HTML, encoding={response.encoding}")
+        return {"type": "html", "data": html}
 
 
 async def _fetch_bank_data(bank_slug: str, url: str, method: str) -> Optional[Dict]:
     """Fetch bank rates data with retry mechanism."""
     logger.info(f"Fetching {bank_slug} rates from {url}")
     
-    # Special handling for Kapitalbank - use requests instead of httpx
-    if bank_slug == "kapitalbank" and method == "html_scraping":
-        try:
-            # Run sync requests in executor to avoid blocking
-            loop = asyncio.get_event_loop()
-            html = await loop.run_in_executor(None, _fetch_kapitalbank_sync, url)
-            return {"type": "html", "data": html}
-        except Exception as e:
-            logger.error(f"Failed to fetch data from {bank_slug}: {e}")
-            raise
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'application/json, text/html, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-    }
-    
+    # Use requests library for ALL banks (more reliable than httpx)
     try:
-        async with httpx.AsyncClient(
-            timeout=20.0, 
-            headers=headers,
-            follow_redirects=True,  # Enable automatic redirect following
-            verify=False  # Disable SSL verification for banks with cert issues
-        ) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            
-            if method == "api_json":
-                data = response.json()
-                logger.debug(f"Successfully fetched JSON data from {bank_slug}: {len(data) if isinstance(data, list) else 'object'}")
-                return {"type": "json", "data": data}
-            elif method == "html_scraping":
-                html = response.text
-                logger.debug(f"Successfully fetched HTML from {bank_slug}: {len(html)} chars")
-                return {"type": "html", "data": html}
-            
+        # Run sync requests in executor to avoid blocking
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _fetch_with_requests_sync, bank_slug, url, method)
+        return result
     except Exception as e:
         logger.error(f"Failed to fetch data from {bank_slug}: {e}")
         raise

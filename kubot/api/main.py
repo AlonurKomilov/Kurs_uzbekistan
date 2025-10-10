@@ -226,7 +226,7 @@ async def get_rates(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid codes format")
     
-    # Get latest rates from CBU (assuming bank_id=3 is CBU based on populate script)
+    # Get latest rates from CBU (bank_id=1 is CBU)
     rates = []
     
     for code in code_list:
@@ -234,7 +234,7 @@ async def get_rates(
         stmt = select(BankRate).where(
             and_(
                 BankRate.code == code,
-                BankRate.bank_id == 3  # CBU bank_id
+                BankRate.bank_id == 1  # CBU bank_id
             )
         ).order_by(desc(BankRate.fetched_at)).limit(1)
         
