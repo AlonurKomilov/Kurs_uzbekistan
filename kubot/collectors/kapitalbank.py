@@ -93,20 +93,19 @@ def parse_kapitalbank_html(html: str) -> List[Tuple[str, float, float]]:
     try:
         soup = BeautifulSoup(html, 'html.parser')
         
-        # Find all rate boxes
-        rate_boxes = soup.find_all('div', class_='kapitalbank_currency_tablo_rate_box')
-        logger.info(f"🔍 Found {len(rate_boxes)} rate boxes")
+        # Find visible container (In branches rates)
+        kb_container = soup.find('div', id='kb-currency-rates-data')
+        if not kb_container:
+            logger.warning(f"⚠️ kb-currency-rates-data container not found")
+            return []
+        
+        # Find all rate boxes in visible container
+        rate_boxes = kb_container.find_all('div', class_='kapitalbank_currency_tablo_rate_box')
+        logger.info(f"🔍 Found {len(rate_boxes)} rate boxes in kb-currency-rates-data")
         
         if len(rate_boxes) == 0:
-            logger.warning(f"⚠️ No rate boxes found, checking alternative structures...")
-            
-            # Try to find currency codes in the HTML
-            all_text = soup.get_text()
-            for currency in SUPPORTED_CURRENCIES:
-                if currency in all_text:
-                    logger.info(f"✅ Found '{currency}' in HTML text")
-                else:
-                    logger.warning(f"❌ '{currency}' not found in HTML text")
+            logger.warning(f"⚠️ No rate boxes found in container")
+            return []
         
         for box in rate_boxes:
             try:
@@ -119,20 +118,15 @@ def parse_kapitalbank_html(html: str) -> List[Tuple[str, float, float]]:
                 if code not in SUPPORTED_CURRENCIES:
                     continue
                 
-                # Find buy rate
-                buy_div = box.find('div', class_='kapitalbank_currency_tablo_type_value')
-                if not buy_div:
+                # Find rate value (only one value per box now)
+                value_div = box.find('div', class_='kapitalbank_currency_tablo_type_value')
+                if not value_div:
                     continue
-                buy_rate = float(buy_div.text.strip().replace(' ', '').replace(',', '.'))
+                rate = float(value_div.text.strip().replace(' ', '').replace(',', '.'))
                 
-                # Find sell rate (next sibling)
-                sell_div = buy_div.find_next_sibling('div', class_='kapitalbank_currency_tablo_type_value')
-                if not sell_div:
-                    continue
-                sell_rate = float(sell_div.text.strip().replace(' ', '').replace(',', '.'))
-                
-                rates.append((code, buy_rate, sell_rate))
-                logger.info(f"💰 {code}: buy={buy_rate}, sell={sell_rate}")
+                # Use same rate for buy and sell (Kapitalbank shows single rate per currency)
+                rates.append((code, rate, rate))
+                logger.info(f"💰 {code}: {rate} (single rate)")
                 
             except Exception as e:
                 logger.error(f"Error parsing rate box: {e}")
