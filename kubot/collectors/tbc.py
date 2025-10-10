@@ -140,48 +140,56 @@ def parse_tbc_html(html: str) -> List[Tuple[str, float, float]]:
     try:
         soup = BeautifulSoup(html, 'html.parser')
         
-        # Look for tables
-        tables = soup.find_all('table')
-        logger.info(f"🔍 Found {len(tables)} tables")
+        # TBC website uses div-based structure, not tables
+        items = soup.find_all('div', class_='body-item')
+        logger.info(f"🔍 Found {len(items)} rate containers")
         
-        for table in tables:
-            rows = table.find_all('tr')
-            for row in rows:
-                try:
-                    cols = row.find_all(['td', 'th'])
-                    if len(cols) < 2:
-                        continue
-                    
-                    code = None
-                    for col in cols:
-                        text = col.get_text(strip=True).upper()
-                        if text in SUPPORTED_CURRENCIES:
-                            code = text
-                            break
-                    
-                    if not code:
-                        continue
-                    
-                    values = []
-                    for col in cols:
-                        try:
-                            text = col.get_text(strip=True).replace(',', '').replace(' ', '')
-                            val = float(text)
-                            if val > 0:
-                                values.append(val)
-                        except ValueError:
-                            continue
-                    
-                    if len(values) >= 2:
-                        rates.append((code, values[0], values[1]))
-                        logger.debug(f"{code}: buy={values[0]}, sell={values[1]}")
-                    elif len(values) == 1:
-                        rates.append((code, values[0], values[0]))
-                        logger.debug(f"{code}: {values[0]}")
-                        
-                except Exception as e:
-                    logger.debug(f"Failed to parse row: {e}")
+        for item in items:
+            try:
+                wrapper = item.find('div', class_='body-item-wrapper')
+                if not wrapper:
                     continue
+                
+                # Extract currency code from flag div
+                currency_div = wrapper.find('div', class_='flag btn-text-1')
+                if not currency_div:
+                    continue
+                
+                code = currency_div.get_text(strip=True).upper()
+                if code not in SUPPORTED_CURRENCIES:
+                    continue
+                
+                # Extract rate from rate div
+                rate_div = wrapper.find('div', class_='rate paragraph-4')
+                if not rate_div:
+                    continue
+                
+                # Parse rate value - handle format like "16,229.57 ↗"
+                rate_text = rate_div.get_text(strip=True)
+                
+                # First split by whitespace to remove arrows/icons
+                parts = rate_text.split()
+                if parts:
+                    rate_text = parts[0]
+                
+                # Remove commas (used as thousands separators)
+                rate_text = rate_text.replace(',', '')
+                
+                # Remove any remaining whitespace
+                rate_text = rate_text.strip()
+                
+                try:
+                    rate = float(rate_text)
+                    # TBC shows single rate (appears to be mid-market rate)
+                    rates.append((code, rate, rate))
+                    logger.debug(f"💰 {code}: {rate}")
+                except ValueError as e:
+                    logger.debug(f"Failed to parse rate '{rate_text}' for {code}: {e}")
+                    continue
+                        
+            except Exception as e:
+                logger.debug(f"Failed to parse item: {e}")
+                continue
                     
     except Exception as e:
         logger.error(f"❌ Error parsing TBC HTML: {e}", exc_info=True)
