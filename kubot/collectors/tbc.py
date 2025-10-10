@@ -32,7 +32,7 @@ TBC_CONFIG = {
 }
 
 
-def fetch_data_sync() -> tuple[str, str]:
+def fetch_data_sync() -> tuple[str, dict | str]:
     """Fetch TBC Bank data - returns (content_type, data)."""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -62,10 +62,13 @@ async def fetch_tbc_rates() -> List[Tuple[str, float, float]]:
         loop = asyncio.get_event_loop()
         content_type, data = await loop.run_in_executor(None, fetch_data_sync)
         
-        if content_type == 'json':
+        if content_type == 'json' and isinstance(data, dict):
             rates = parse_tbc_json(data)
-        else:
+        elif isinstance(data, str):
             rates = parse_tbc_html(data)
+        else:
+            logger.error(f"❌ Unexpected data type: {type(data)}")
+            return []
             
         logger.info(f"✅ Parsed {len(rates)} rates from TBC")
         return rates

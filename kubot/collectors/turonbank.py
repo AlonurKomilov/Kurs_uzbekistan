@@ -73,7 +73,7 @@ def parse_turonbank_html(html: str) -> List[Tuple[str, float, float]]:
         logger.info(f"🔍 Found {len(tables)} tables")
         
         # Also look for divs that might contain rates
-        rate_containers = soup.find_all(['div', 'tr', 'li'], class_=lambda x: x and ('rate' in x.lower() or 'currency' in x.lower() or 'exchange' in x.lower()))
+        rate_containers = soup.find_all(['div', 'tr', 'li'], class_=lambda x: bool(x and ('rate' in x.lower() or 'currency' in x.lower() or 'exchange' in x.lower())))
         logger.info(f"🔍 Found {len(rate_containers)} potential rate containers")
         
         # Search in tables first
@@ -100,11 +100,33 @@ def parse_turonbank_html(html: str) -> List[Tuple[str, float, float]]:
                     values = []
                     for col in cols:
                         try:
-                            text = col.get_text(strip=True).replace(',', '').replace(' ', '')
+                            text = col.get_text(strip=True).replace(' ', '')
+                            # Handle both US (12,080.50) and EU (12.080,50) formats
+                            # If there's a comma after more than 2 digits, it's a thousands separator (US format)
+                            # If there's a period after more than 2 digits, it's a thousands separator (EU format)
+                            if ',' in text and '.' in text:
+                                # Both present - determine which is decimal
+                                if text.rfind(',') > text.rfind('.'):
+                                    # Comma is last, so it's decimal separator (EU: 12.080,50)
+                                    text = text.replace('.', '').replace(',', '.')
+                                else:
+                                    # Period is last, so it's decimal separator (US: 12,080.50)
+                                    text = text.replace(',', '')
+                            elif ',' in text:
+                                # Only comma - could be thousands or decimal
+                                # If comma is followed by exactly 2 digits at end, it's decimal (EU: 12080,50)
+                                # Otherwise it's thousands (US: 12,080)
+                                import re
+                                if re.search(r',\d{2}$', text):
+                                    text = text.replace(',', '.')
+                                else:
+                                    text = text.replace(',', '')
+                            # If only period, keep as is (US: 12080.50)
+                            
                             val = float(text)
-                            if val > 0:
+                            if val > 0 and val < 1000000:  # Sanity check: rates should be under 1 million
                                 values.append(val)
-                        except ValueError:
+                        except (ValueError, AttributeError):
                             continue
                     
                     if len(values) >= 2:
