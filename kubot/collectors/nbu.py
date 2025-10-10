@@ -77,6 +77,9 @@ def parse_nbu_html(html: str) -> List[Tuple[str, float, float]]:
     """
     Parse NBU HTML to extract exchange rates.
     
+    NBU stores rates in <option> elements with data-buy and data-sell attributes:
+    <option value="USD" data-buy="12 080" data-sell="12 140">USD</option>
+    
     Args:
         html: HTML content from NBU website
         
@@ -84,54 +87,55 @@ def parse_nbu_html(html: str) -> List[Tuple[str, float, float]]:
         List of (currency_code, buy_rate, sell_rate) tuples
     """
     rates = []
+    seen_currencies = set()  # Track unique currencies to avoid duplicates
     
     try:
         soup = BeautifulSoup(html, 'html.parser')
         
-        # NBU usually shows rates in a table
-        # Look for table with exchange rates
-        tables = soup.find_all('table')
-        logger.info(f"🔍 Found {len(tables)} tables")
+        # Find all <option> elements with currency data
+        options = soup.find_all('option', attrs={'data-buy': True, 'data-sell': True})
+        logger.info(f"🔍 Found {len(options)} option elements with rate data")
         
-        for table in tables:
-            rows = table.find_all('tr')
-            
-            for row in rows:
-                try:
-                    cols = row.find_all('td')
-                    if len(cols) < 3:
-                        continue
-                    
-                    # Try to find currency code (usually in first column)
-                    for col in cols:
-                        text = col.get_text(strip=True).upper()
-                        if text in SUPPORTED_CURRENCIES:
-                            code = text
-                            break
-                    else:
-                        continue
-                    
-                    # Look for numeric values (exchange rates)
-                    numeric_values = []
-                    for col in cols:
-                        try:
-                            text = col.get_text(strip=True).replace(',', '').replace(' ', '')
-                            value = float(text)
-                            if value > 0:
-                                numeric_values.append(value)
-                        except ValueError:
-                            continue
-                    
-                    # Typically we expect at least one rate value
-                    if numeric_values:
-                        # If only one rate, use it for both buy and sell
-                        rate = numeric_values[0]
-                        rates.append((code, rate, rate))
-                        logger.debug(f"{code}: {rate}")
-                        
-                except Exception as e:
-                    logger.debug(f"Failed to parse row: {e}")
+        for option in options:
+            try:
+                code_raw = option.get('value')
+                if not code_raw or not isinstance(code_raw, str):
                     continue
+                code = code_raw.upper()
+                if code not in SUPPORTED_CURRENCIES:
+                    continue
+                
+                # Skip if we've already seen this currency
+                if code in seen_currencies:
+                    continue
+                
+                # Get buy/sell rates from data attributes
+                buy_raw = option.get('data-buy', '')
+                sell_raw = option.get('data-sell', '')
+                buy_str = str(buy_raw).replace(' ', '').replace(',', '') if buy_raw else ''
+                sell_str = str(sell_raw).replace(' ', '').replace(',', '') if sell_raw else ''
+                
+                # Skip if either is missing or "-"
+                if not buy_str or not sell_str or buy_str == '-' or sell_str == '-':
+                    logger.debug(f"Skipping {code}: incomplete rates (buy={buy_str}, sell={sell_str})")
+                    continue
+                
+                try:
+                    buy_rate = float(buy_str)
+                    sell_rate = float(sell_str)
+                    
+                    if buy_rate > 0 and sell_rate > 0:
+                        rates.append((code, buy_rate, sell_rate))
+                        seen_currencies.add(code)
+                        logger.debug(f"{code}: buy={buy_rate}, sell={sell_rate}")
+                        
+                except ValueError as e:
+                    logger.debug(f"Failed to parse {code} rates: {e}")
+                    continue
+                    
+            except Exception as e:
+                logger.debug(f"Failed to parse option: {e}")
+                continue
                     
     except Exception as e:
         logger.error(f"❌ Error parsing NBU HTML: {e}", exc_info=True)
