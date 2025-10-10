@@ -9,7 +9,6 @@ Supported Banks:
 - Ipoteka Bank
 - Hamkorbank
 - Kapitalbank
-- Qishloq Qurilish Bank
 - TBC Bank
 - Turonbank
 - Universal Bank
@@ -72,13 +71,6 @@ BANK_CONFIGS = {
         "url": "https://kapitalbank.uz/en/services/exchange-rates/",
         "method": "html_scraping",
         "website": "https://kapitalbank.uz"
-    },
-    "qishloq": {
-        "name": "Qishloq Qurilish Bank",
-        "slug": "qishloq",
-        "url": "https://www.qqb.uz/",
-        "method": "html_scraping",
-        "website": "https://www.qqb.uz"
     },
     "tbc": {
         "name": "TBC Bank Uzbekistan",
@@ -350,41 +342,6 @@ def _parse_hamkorbank_html(html: str) -> List[Tuple[str, float, float]]:
     return rates
 
 
-def _parse_qishloq_html(html: str) -> List[Tuple[str, float, float]]:
-    """Parse Qishloq Qurilish Bank rates from HTML scraping."""
-    rates = []
-    try:
-        soup = BeautifulSoup(html, 'html.parser')
-        
-        # Look for exchange rates section
-        rate_sections = soup.find_all(['div', 'section'], attrs={'class': re.compile(r'exchange|currency|rate')})  # type: ignore[arg-type]
-        
-        for section in rate_sections:
-            # Look for currency data patterns
-            currency_items = section.find_all(['div', 'span', 'td'], string=re.compile(r'USD|EUR|RUB'))  # type: ignore[arg-type]
-            
-            for item in currency_items:
-                parent = item.parent
-                if parent:
-                    text = parent.get_text()
-                    # Look for patterns like "USD 12750 12850"
-                    match = re.search(r'(USD|EUR|RUB)\s+(\d+\.?\d*)\s+(\d+\.?\d*)', text)
-                    if match:
-                        code, buy, sell = match.groups()
-                        try:
-                            buy_rate = float(buy)
-                            sell_rate = float(sell)
-                            if buy_rate > 0 and sell_rate > 0:
-                                rates.append((code, buy_rate, sell_rate))
-                                logger.debug(f"Qishloq {code}: buy={buy_rate}, sell={sell_rate}")
-                        except ValueError:
-                            continue
-                            
-    except Exception as e:
-        logger.error(f"Error parsing Qishloq HTML: {e}")
-    return rates
-
-
 def _parse_turonbank_html(html: str) -> List[Tuple[str, float, float]]:
     """Parse Turonbank rates from HTML scraping."""
     rates = []
@@ -438,8 +395,6 @@ def _parse_bank_rates(bank_slug: str, response_data: Dict) -> List[Tuple[str, fl
             return _parse_hamkorbank_html(html)
         elif bank_slug == "kapitalbank":
             return _parse_kapitalbank_rates(html)
-        elif bank_slug == "qishloq":
-            return _parse_qishloq_html(html)
         elif bank_slug == "turonbank":
             return _parse_turonbank_html(html)
     

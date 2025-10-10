@@ -17,7 +17,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from infrastructure.db import init_db
 from cbu import collect_cbu_rates
-from commercial_banks import collect_commercial_banks_rates
+
+# Import individual bank collectors
+from kapitalbank import collect as collect_kapitalbank
+from nbu import collect as collect_nbu
+from ipoteka import collect as collect_ipoteka
+from hamkorbank import collect as collect_hamkorbank
+from tbc import collect as collect_tbc
+from turonbank import collect as collect_turonbank
+from universal import collect as collect_universal
 
 # Load environment variables
 load_dotenv()
@@ -98,17 +106,59 @@ async def main():
             name='CBU Rates Collector'
         )
         
-        # Add commercial banks rates collection job (every 15 minutes for more frequent updates)
+        # Add individual bank collectors (every 15 minutes each, staggered)
         scheduler.add_job(
-            collect_commercial_banks_rates,
+            collect_kapitalbank,
             IntervalTrigger(minutes=15),
-            id='commercial_banks_collector',
-            name='Commercial Banks Rates Collector'
+            id='kapitalbank_collector',
+            name='Kapitalbank Collector'
+        )
+        
+        scheduler.add_job(
+            collect_nbu,
+            IntervalTrigger(minutes=15),
+            id='nbu_collector',
+            name='NBU Collector'
+        )
+        
+        scheduler.add_job(
+            collect_ipoteka,
+            IntervalTrigger(minutes=15),
+            id='ipoteka_collector',
+            name='Ipoteka Collector'
+        )
+        
+        scheduler.add_job(
+            collect_hamkorbank,
+            IntervalTrigger(minutes=15),
+            id='hamkorbank_collector',
+            name='Hamkorbank Collector'
+        )
+        
+        scheduler.add_job(
+            collect_tbc,
+            IntervalTrigger(minutes=15),
+            id='tbc_collector',
+            name='TBC Collector'
+        )
+        
+        scheduler.add_job(
+            collect_turonbank,
+            IntervalTrigger(minutes=15),
+            id='turonbank_collector',
+            name='Turonbank Collector'
+        )
+        
+        scheduler.add_job(
+            collect_universal,
+            IntervalTrigger(minutes=15),
+            id='universal_collector',
+            name='Universal Collector'
         )
         
         # Start scheduler
         scheduler.start()
-        logger.info("✅ Scheduler started with CBU + Commercial Banks collectors")
+        logger.info("✅ Scheduler started with CBU + Individual Bank collectors")
         
         # Start health monitoring
         asyncio.create_task(health_monitor())
@@ -120,11 +170,20 @@ async def main():
         # Run CBU collection first
         await collect_cbu_rates()
         
-        # Run commercial banks collection
-        await collect_commercial_banks_rates()
+        # Run all individual bank collections in parallel
+        await asyncio.gather(
+            collect_kapitalbank(),
+            collect_nbu(),
+            collect_ipoteka(),
+            collect_hamkorbank(),
+            collect_tbc(),
+            collect_turonbank(),
+            collect_universal(),
+            return_exceptions=True  # Don't let one failure stop others
+        )
         
         # Keep running
-        logger.info("🚀 Collectors are now running with enhanced bank coverage...")
+        logger.info("🚀 Collectors are now running (CBU + 7 commercial banks: Kapitalbank, NBU, Ipoteka, Hamkorbank, TBC, Turonbank, Universal)...")
         try:
             while True:
                 await asyncio.sleep(1)
