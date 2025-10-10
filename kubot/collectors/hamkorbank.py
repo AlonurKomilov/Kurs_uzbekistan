@@ -98,26 +98,35 @@ def parse_hamkorbank_json(data: dict) -> List[Tuple[str, float, float]]:
         
         logger.info(f"📊 Found {len(exchanges)} exchange entries")
         
+        # Track unique currencies (avoid duplicates from different destination_codes)
+        seen_currencies = set()
+        
         for item in exchanges:
             try:
                 # Extract currency code
-                code = item.get('code', '').upper()
-                if not code:
-                    # Try alternative keys
-                    code = item.get('currency', '').upper()
-                if not code:
-                    code = item.get('currencyCode', '').upper()
+                code = item.get('currency_char', '').upper()
                 
-                if code not in SUPPORTED_CURRENCIES:
+                if not code or code not in SUPPORTED_CURRENCIES:
                     continue
                 
-                # Extract buy and sell rates
-                buy_rate = item.get('buy') or item.get('buyRate') or item.get('purchase')
-                sell_rate = item.get('sell') or item.get('sellRate') or item.get('sale')
+                # Filter for branch rates (destination_code="2") to avoid duplicates  
+                dest_code = item.get('destination_code', '')
+                if dest_code != '2':
+                    continue
                 
-                if buy_rate and sell_rate:
-                    buy_rate = float(buy_rate)
-                    sell_rate = float(sell_rate)
+                # Skip if already processed
+                if code in seen_currencies:
+                    continue
+                seen_currencies.add(code)
+                
+                # Extract buy and sell rates (values are in UZS * 100)
+                buy_rate_raw = item.get('buying_rate')
+                sell_rate_raw = item.get('selling_rate')
+                
+                if buy_rate_raw is not None and sell_rate_raw is not None:
+                    # Convert from UZS*100 to UZS (e.g., 1208000 → 12080.0)
+                    buy_rate = float(buy_rate_raw) / 100.0
+                    sell_rate = float(sell_rate_raw) / 100.0
                     
                     # Sanity check
                     if 0 < buy_rate < 1_000_000 and 0 < sell_rate < 1_000_000:
