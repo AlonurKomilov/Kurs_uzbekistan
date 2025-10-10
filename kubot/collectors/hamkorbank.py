@@ -1,7 +1,7 @@
 """
 Hamkorbank Exchange Rates Collector
 
-Collects exchange rates from Hamkorbank using HTML scraping.
+Collects exchange rates from Hamkorbank API (JavaScript-loaded data).
 Uses requests library for reliable HTTP handling.
 """
 
@@ -10,7 +10,6 @@ import logging
 from typing import List, Tuple
 
 import requests
-from bs4 import BeautifulSoup
 
 from core.repos import BankRatesRepo
 from infrastructure.db import SessionLocal
@@ -26,34 +25,35 @@ SUPPORTED_CURRENCIES = ["USD", "EUR", "RUB", "GBP", "JPY", "CHF", "KRW", "CNY"]
 HAMKORBANK_CONFIG = {
     "name": "Hamkorbank",
     "slug": "hamkorbank",
-    "url": "https://hamkorbank.uz/exchange-rate/",
+    "api_url": "https://api-dbo.hamkorbank.uz/webflow/v1/exchanges",
     "website": "https://hamkorbank.uz"
 }
 
 
-def fetch_html_sync() -> str:
-    """Fetch Hamkorbank HTML page."""
+def fetch_json_sync() -> dict:
+    """Fetch Hamkorbank exchange rates from API."""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept': 'application/json',
+        'Referer': 'https://hamkorbank.uz/',
     }
     
-    response = requests.get(HAMKORBANK_CONFIG["url"], headers=headers, timeout=20)
+    response = requests.get(HAMKORBANK_CONFIG["api_url"], headers=headers, timeout=20)
     response.raise_for_status()
-    logger.info(f"✅ Fetched {len(response.text)} chars")
-    return response.text
+    logger.info(f"✅ Fetched JSON response: {response.status_code}")
+    return response.json()
 
 
 async def fetch_hamkorbank_rates() -> List[Tuple[str, float, float]]:
-    """Fetch Hamkorbank exchange rates."""
-    logger.info(f"🏦 Fetching Hamkorbank rates from {HAMKORBANK_CONFIG['url']}")
+    """Fetch Hamkorbank exchange rates from API."""
+    logger.info(f"🏦 Fetching Hamkorbank rates from API")
     
     try:
         loop = asyncio.get_event_loop()
-        html = await loop.run_in_executor(None, fetch_html_sync)
+        data = await loop.run_in_executor(None, fetch_json_sync)
         
-        rates = parse_hamkorbank_html(html)
-        logger.info(f"✅ Parsed {len(rates)} rates from Hamkorbank")
+        rates = parse_hamkorbank_json(data)
+        logger.info(f"✅ Parsed {len(rates)} rates from Hamkorbank API")
         return rates
             
     except Exception as e:
@@ -61,112 +61,76 @@ async def fetch_hamkorbank_rates() -> List[Tuple[str, float, float]]:
         return []
 
 
-def parse_hamkorbank_html(html: str) -> List[Tuple[str, float, float]]:
-    """Parse Hamkorbank HTML to extract exchange rates."""
+def parse_hamkorbank_json(data: dict) -> List[Tuple[str, float, float]]:
+    """Parse Hamkorbank JSON API response to extract exchange rates.
+    
+    Expected JSON structure:
+    {
+      "data": [
+        {
+          "code": "USD",
+          "buy": 12700.0,
+          "sell": 12800.0,
+          ...
+        }
+      ]
+    }
+    """
     rates = []
     
     try:
-        soup = BeautifulSoup(html, 'html.parser')
+        # Log the data structure for debugging
+        logger.info(f"� JSON keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
         
-        # Look for tables with exchange rates
-        tables = soup.find_all('table')
-        logger.info(f"🔍 Found {len(tables)} tables")
+        # Handle different possible JSON structures
+        exchanges = []
+        if isinstance(data, dict):
+            # Try common keys
+            for key in ['data', 'rates', 'exchanges', 'result']:
+                if key in data:
+                    exchanges = data[key]
+                    break
+            # If no key matches, assume data itself is the list
+            if not exchanges and 'code' in data:
+                exchanges = [data]
+        elif isinstance(data, list):
+            exchanges = data
         
-        # Also look for divs that might contain rates
-        rate_containers = soup.find_all(['div', 'tr', 'li'], class_=lambda x: bool(x and ('rate' in x.lower() or 'currency' in x.lower() or 'exchange' in x.lower())))
-        logger.info(f"🔍 Found {len(rate_containers)} potential rate containers")
+        logger.info(f"📊 Found {len(exchanges)} exchange entries")
         
-        # Search in tables first
-        for table in tables:
-            rows = table.find_all('tr')
-            for row in rows:
-                try:
-                    cols = row.find_all(['td', 'th'])
-                    if len(cols) < 2:
-                        continue
+        for item in exchanges:
+            try:
+                # Extract currency code
+                code = item.get('code', '').upper()
+                if not code:
+                    # Try alternative keys
+                    code = item.get('currency', '').upper()
+                if not code:
+                    code = item.get('currencyCode', '').upper()
+                
+                if code not in SUPPORTED_CURRENCIES:
+                    continue
+                
+                # Extract buy and sell rates
+                buy_rate = item.get('buy') or item.get('buyRate') or item.get('purchase')
+                sell_rate = item.get('sell') or item.get('sellRate') or item.get('sale')
+                
+                if buy_rate and sell_rate:
+                    buy_rate = float(buy_rate)
+                    sell_rate = float(sell_rate)
                     
-                    # Look for currency code
-                    code = None
-                    for col in cols:
-                        text = col.get_text(strip=True).upper()
-                        if text in SUPPORTED_CURRENCIES:
-                            code = text
-                            break
-                    
-                    if not code:
-                        continue
-                    
-                    # Extract numeric values
-                    values = []
-                    for col in cols:
-                        try:
-                            text = col.get_text(strip=True).replace(' ', '')
-                            # Handle both US (12,080.50) and EU (12.080,50) formats
-                            # If there's a comma after more than 2 digits, it's a thousands separator (US format)
-                            # If there's a period after more than 2 digits, it's a thousands separator (EU format)
-                            if ',' in text and '.' in text:
-                                # Both present - determine which is decimal
-                                if text.rfind(',') > text.rfind('.'):
-                                    # Comma is last, so it's decimal separator (EU: 12.080,50)
-                                    text = text.replace('.', '').replace(',', '.')
-                                else:
-                                    # Period is last, so it's decimal separator (US: 12,080.50)
-                                    text = text.replace(',', '')
-                            elif ',' in text:
-                                # Only comma - could be thousands or decimal
-                                # If comma is followed by exactly 2 digits at end, it's decimal (EU: 12080,50)
-                                # Otherwise it's thousands (US: 12,080)
-                                import re
-                                if re.search(r',\d{2}$', text):
-                                    text = text.replace(',', '.')
-                                else:
-                                    text = text.replace(',', '')
-                            # If only period, keep as is (US: 12080.50)
-                            
-                            val = float(text)
-                            if val > 0 and val < 1000000:  # Sanity check: rates should be under 1 million
-                                values.append(val)
-                        except (ValueError, AttributeError):
-                            continue
-                    
-                    if len(values) >= 2:
-                        # Assume first value is buy, second is sell
-                        rates.append((code, values[0], values[1]))
-                        logger.debug(f"{code}: buy={values[0]}, sell={values[1]}")
-                    elif len(values) == 1:
-                        # Single rate - use for both
-                        rates.append((code, values[0], values[0]))
-                        logger.debug(f"{code}: {values[0]}")
+                    # Sanity check
+                    if 0 < buy_rate < 1_000_000 and 0 < sell_rate < 1_000_000:
+                        rates.append((code, buy_rate, sell_rate))
+                        logger.info(f"💰 {code}: buy={buy_rate}, sell={sell_rate}")
+                    else:
+                        logger.warning(f"⚠️ Invalid rates for {code}: buy={buy_rate}, sell={sell_rate}")
                         
-                except Exception as e:
-                    logger.debug(f"Failed to parse row: {e}")
-                    continue
-        
-        # If no rates found in tables, try other containers
-        if not rates:
-            for container in rate_containers:
-                try:
-                    text = container.get_text(strip=True).upper()
-                    for currency in SUPPORTED_CURRENCIES:
-                        if currency in text:
-                            # Extract numbers near currency code
-                            import re
-                            numbers = re.findall(r'\d+[\.,]?\d*', text)
-                            if numbers:
-                                values = [float(n.replace(',', '.')) for n in numbers if float(n.replace(',', '.')) > 0]
-                                if len(values) >= 2:
-                                    rates.append((currency, values[0], values[1]))
-                                    logger.debug(f"{currency}: buy={values[0]}, sell={values[1]}")
-                                    break
-                                elif len(values) == 1:
-                                    rates.append((currency, values[0], values[0]))
-                                    logger.debug(f"{currency}: {values[0]}")
-                                    break
-                except Exception as e:
-                    continue
+            except (ValueError, TypeError) as e:
+                logger.warning(f"⚠️ Failed to parse exchange item: {e}")
                     
     except Exception as e:
-        logger.error(f"❌ Error parsing Hamkorbank HTML: {e}", exc_info=True)
+        logger.error(f"❌ Error parsing Hamkorbank JSON: {e}", exc_info=True)
     
     return rates
 
