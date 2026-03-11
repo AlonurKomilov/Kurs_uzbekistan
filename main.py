@@ -48,9 +48,9 @@ def _build_collectors():
     from collectors.hamkorbank import HamkorbankCollector
     from collectors.infinbank import InfinbankCollector
     from collectors.ipoteka import IpotekaCollector
+    from collectors.ipakyuli import IpakyuliCollector
     from collectors.kapitalbank import KapitalbankCollector
     from collectors.kdbbank import KdbbankCollector
-    from collectors.kursuz import KursUzCollector
     from collectors.nbu import NbuCollector
     from collectors.ofb import OfbCollector
     from collectors.poytaxtbank import PoytaxtbankCollector
@@ -58,7 +58,6 @@ def _build_collectors():
     from collectors.tbc import TbcCollector
     from collectors.tengebank import TengebankCollector
     from collectors.trastbank import TrastbankCollector
-    from collectors.trustbank import TrustbankCollector
     from collectors.turonbank import TuronbankCollector
     from collectors.universalbank import UniversalbankCollector
     from collectors.xalqbank import XalqbankCollector
@@ -72,7 +71,6 @@ def _build_collectors():
         TbcCollector(),
         TuronbankCollector(),
         AloqabankCollector(),
-        TrustbankCollector(),
         TrastbankCollector(),
         PoytaxtbankCollector(),
         KdbbankCollector(),
@@ -84,7 +82,7 @@ def _build_collectors():
         XalqbankCollector(),
         TengebankCollector(),
         UniversalbankCollector(),
-        KursUzCollector(),
+        IpakyuliCollector(),
     ]
 
 

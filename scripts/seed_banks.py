@@ -18,7 +18,6 @@ BANKS = [
     ("tbc", "TBC Bank", "https://tbcbank.uz"),
     ("turonbank", "Turonbank", "https://turonbank.uz"),
     ("aloqabank", "Aloqabank", "https://aloqabank.uz"),
-    ("trustbank", "Trustbank", "https://trustbank.uz"),
     ("trastbank", "Trastbank", "https://trastbank.uz"),
     ("poytaxtbank", "Poytaxt Bank", "https://poytaxtbank.uz"),
     ("kdbbank", "KDB Bank", "https://kdb.uz"),
@@ -30,6 +29,9 @@ BANKS = [
     ("saderatbank", "Saderat Bank", "https://saderatbank.uz"),
     ("sqb", "Sanoat Qurilish Bank", "https://sqb.uz"),
     ("xalqbank", "Xalq Bank", "https://xalqbank.uz"),
+    ("tengebank", "Tengebank", "https://tengebank.uz"),
+    ("universalbank", "Universal Bank", "https://universalbank.uz"),
+    ("ipakyulibank", "Ipak Yo'li Bank", "https://ipakyulibank.uz"),
 ]
 
 
