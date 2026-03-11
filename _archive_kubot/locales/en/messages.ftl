@@ -32,7 +32,7 @@ no-data = No data found
 # Currency rates messages
 rates.title = Currency Rates
 rates.last-updated = Last updated: {time}
-rates.top-banks = Top banks (sell ↓)
+rates.top-banks = Top banks (sell)
 rates.bank-name = Bank
 rates.buy = Buy
 rates.sell = Sell

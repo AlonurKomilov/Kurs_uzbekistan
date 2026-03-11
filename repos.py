@@ -109,6 +109,17 @@ class BankRatesRepo:
         )
         return list(result.scalars().all())
 
+    async def get_cbu_rate(self, code: str) -> Optional[BankRate]:
+        """Get the latest CBU rate for a currency."""
+        result = await self.s.execute(
+            select(BankRate)
+            .join(Bank)
+            .where(Bank.slug == "cbu", BankRate.code == code.upper())
+            .order_by(desc(BankRate.fetched_at))
+            .limit(1)
+        )
+        return result.scalars().first()
+
     async def delete_older_than(self, days: int) -> int:
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         result = await self.s.execute(

@@ -26,7 +26,6 @@ BANKS = [
     ("agrobank", "Agrobank", "https://agrobank.uz"),
     ("infinbank", "InFinBank", "https://infinbank.uz"),
     ("ofb", "Orient Finance Bank", "https://ofb.uz"),
-    ("saderatbank", "Saderat Bank", "https://saderatbank.uz"),
     ("sqb", "Sanoat Qurilish Bank", "https://sqb.uz"),
     ("xalqbank", "Xalq Bank", "https://xalqbank.uz"),
     ("tengebank", "Tengebank", "https://tengebank.uz"),

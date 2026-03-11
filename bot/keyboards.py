@@ -19,6 +19,7 @@ def main_keyboard(i18n: Callable, is_subscribed: bool = False) -> ReplyKeyboardM
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=i18n("button.current-rates"))],
+            [KeyboardButton(text=i18n("button.converter"))],
             [KeyboardButton(text=sub_btn), KeyboardButton(text=i18n("button.language"))],
         ],
         resize_keyboard=True,
@@ -47,11 +48,24 @@ def digest_schedule_keyboard(i18n: Callable) -> InlineKeyboardMarkup:
     )
 
 
+def converter_currency_keyboard(i18n: Callable) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💵 USD", callback_data="conv:USD"),
+                InlineKeyboardButton(text="💶 EUR", callback_data="conv:EUR"),
+                InlineKeyboardButton(text="₽ RUB", callback_data="conv:RUB"),
+            ]
+        ]
+    )
+
+
 def currency_tabs(
     currency: str,
     current_page: int = 1,
     total_pages: int = 1,
     show_all: bool = False,
+    i18n: Callable | None = None,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
 
@@ -78,16 +92,19 @@ def currency_tabs(
                 InlineKeyboardButton(text="▶️", callback_data=f"cr:{currency}:p{current_page + 1}")
             )
         rows.append(nav)
+        _top = i18n("button.back-to-top") if i18n else "🔝"
         rows.append(
-            [InlineKeyboardButton(text="🔝", callback_data=f"cr:{currency}:top")]
+            [InlineKeyboardButton(text=_top, callback_data=f"cr:{currency}:top")]
         )
     elif show_all:
+        _top = i18n("button.back-to-top") if i18n else "🔝"
         rows.append(
-            [InlineKeyboardButton(text="🔝", callback_data=f"cr:{currency}:top")]
+            [InlineKeyboardButton(text=_top, callback_data=f"cr:{currency}:top")]
         )
     else:
+        _show = i18n("button.show-all") if i18n else "📋 Show All"
         rows.append(
-            [InlineKeyboardButton(text="📋 Show All", callback_data=f"cr:{currency}:all")]
+            [InlineKeyboardButton(text=_show, callback_data=f"cr:{currency}:all")]
         )
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
