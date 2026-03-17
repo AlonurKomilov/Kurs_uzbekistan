@@ -4,7 +4,7 @@ import json
 import logging
 import re
 
-import requests
+import httpx
 
 from collectors.base import BaseCollector, CURRENCIES, HEADERS
 
@@ -18,14 +18,10 @@ class AabCollector(BaseCollector):
     name = "Asia Alliance Bank"
 
     async def fetch_rates(self) -> list[tuple[str, float, float]]:
-        html = await self.run_sync(_fetch_html)
-        return _parse(html)
-
-
-def _fetch_html() -> str:
-    resp = requests.get(URL, headers=HEADERS, timeout=20)
-    resp.raise_for_status()
-    return resp.text
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            resp = await client.get(URL, headers=HEADERS)
+            resp.raise_for_status()
+        return _parse(resp.text)
 
 
 _RATES_RE = re.compile(r"Rates\s*=\s*(\{.+?\})\s*;?\s*\n")

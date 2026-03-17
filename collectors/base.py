@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from abc import ABC, abstractmethod
 from typing import ClassVar
 
+import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from db import get_session
@@ -39,18 +41,24 @@ class BaseCollector(ABC):
     @retry(
         wait=wait_exponential(multiplier=1, min=2, max=30),
         stop=stop_after_attempt(3),
-        retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+        retry=retry_if_exception_type((
+            ConnectionError, TimeoutError, OSError,
+            httpx.HTTPError,
+        )),
         reraise=True,
     )
     async def collect(self) -> int:
         """Fetch rates and persist to DB. Returns count saved."""
-        try:
-            raw = await self.fetch_rates()
-        except Exception:
-            logger.exception("%s: fetch failed", self.slug)
-            return 0
+        raw = await self.fetch_rates()
 
-        rates = [(c, b, s) for c, b, s in raw if c in CURRENCIES and b > 0 and s > 0]
+        rates = [
+            (c, b, s) for c, b, s in raw
+            if c in CURRENCIES
+            and isinstance(b, (int, float)) and isinstance(s, (int, float))
+            and not math.isnan(b) and not math.isnan(s)
+            and not math.isinf(b) and not math.isinf(s)
+            and 0 < b < 1_000_000 and 0 < s < 1_000_000
+        ]
         if not rates:
             logger.warning("%s: no valid rates", self.slug)
             return 0

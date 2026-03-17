@@ -1,0 +1,25 @@
+[Unit]
+Description=Kurs UZ Bot — Telegram currency rates bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=abcdev
+WorkingDirectory=/home/abcdev/projects/Kurs_uzbekistan
+ExecStart=/home/abcdev/projects/Kurs_uzbekistan/.venv/bin/python3 main.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/abcdev/projects/Kurs_uzbekistan/logs/bot.log
+StandardError=append:/home/abcdev/projects/Kurs_uzbekistan/logs/bot.log
+EnvironmentFile=/home/abcdev/projects/Kurs_uzbekistan/.env
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/abcdev/projects/Kurs_uzbekistan/data /home/abcdev/projects/Kurs_uzbekistan/logs
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -159,6 +159,11 @@ yarn-error.log*
 *.db
 *.sqlite
 *.sqlite3
+# SQLite WAL mode journal files
+*.db-shm
+*.db-wal
+*.sqlite-shm
+*.sqlite-wal
 
 # OS generated files
 .DS_Store

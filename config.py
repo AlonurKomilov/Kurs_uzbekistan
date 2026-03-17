@@ -15,6 +15,15 @@ class Settings(BaseSettings):
     COLLECTION_INTERVAL_MINUTES: int = 15
     RETENTION_DAYS: int = 90
 
+    ADMIN_IDS: str = ""
+    HEALTH_PORT: int = 8080
+
+    @property
+    def admin_ids(self) -> set[int]:
+        if not self.ADMIN_IDS.strip():
+            return set()
+        return {int(x.strip()) for x in self.ADMIN_IDS.split(",") if x.strip()}
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

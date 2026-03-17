@@ -10,8 +10,8 @@ start:
 	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
 		echo "Bot already running (PID $$(cat $(PID_FILE)))"; \
 	else \
+		mkdir -p logs data; \
 		nohup $(PYTHON) $(APP) >> logs/bot.log 2>&1 & echo $$! > $(PID_FILE); \
-		mkdir -p logs; \
 		echo "Bot started (PID $$(cat $(PID_FILE)))"; \
 	fi
 
@@ -64,3 +64,23 @@ status:
 logs:
 	@mkdir -p logs
 	@tail -f logs/bot.log
+
+## install-service — install systemd service for auto-start on boot
+install-service:
+	@bash install-service.sh
+
+## service-status — check systemd service status
+service-status:
+	@sudo systemctl status kurs-uz-bot --no-pager || true
+
+## service-restart — restart via systemd
+service-restart:
+	@sudo systemctl restart kurs-uz-bot
+
+## service-stop — stop via systemd
+service-stop:
+	@sudo systemctl stop kurs-uz-bot
+
+## service-logs — follow systemd journal logs
+service-logs:
+	@sudo journalctl -u kurs-uz-bot -f

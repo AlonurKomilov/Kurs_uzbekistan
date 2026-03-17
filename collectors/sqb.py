@@ -2,7 +2,7 @@
 
 import logging
 
-import requests
+import httpx
 
 from collectors.base import BaseCollector, CURRENCIES, HEADERS
 
@@ -19,14 +19,10 @@ class SqbCollector(BaseCollector):
     name = "SQB"
 
     async def fetch_rates(self) -> list[tuple[str, float, float]]:
-        data = await self.run_sync(_fetch)
-        return _parse(data)
-
-
-def _fetch() -> dict:
-    resp = requests.get(URL, headers=HEADERS, timeout=20)
-    resp.raise_for_status()
-    return resp.json()
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            resp = await client.get(URL, headers=HEADERS)
+            resp.raise_for_status()
+        return _parse(resp.json())
 
 
 def _parse(data: dict) -> list[tuple[str, float, float]]:
@@ -41,14 +37,16 @@ def _parse(data: dict) -> list[tuple[str, float, float]]:
             try:
                 buy = float(item["buy"])
                 sell = float(item["sell"])
-            except (KeyError, ValueError, TypeError):
+            except (KeyError, ValueError, TypeError) as e:
+                logger.debug("sqb: failed to parse online %s: %s", code, e)
                 continue
         elif code in offline:
             item = offline[code]
             try:
                 buy = float(item["buy"]) / 100
                 sell = float(item["sell"]) / 100
-            except (KeyError, ValueError, TypeError):
+            except (KeyError, ValueError, TypeError) as e:
+                logger.debug("sqb: failed to parse offline %s: %s", code, e)
                 continue
         else:
             continue

@@ -16,7 +16,7 @@ class CbuCollector(BaseCollector):
     name = "Central Bank"
 
     async def fetch_rates(self) -> list[tuple[str, float, float]]:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
             resp = await client.get(CBU_URL)
             resp.raise_for_status()
             data = resp.json()
@@ -28,7 +28,8 @@ class CbuCollector(BaseCollector):
                 continue
             try:
                 rate = float(row["Rate"])
-            except (KeyError, ValueError, TypeError):
+            except (KeyError, ValueError, TypeError) as e:
+                logger.debug("cbu: failed to parse rate for %s: %s", code, e)
                 continue
             if rate > 0:
                 rates.append((code, rate, rate))  # CBU: buy == sell

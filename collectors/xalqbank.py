@@ -2,7 +2,7 @@
 
 import logging
 
-import requests
+import httpx
 
 from collectors.base import BaseCollector, CURRENCIES, HEADERS
 
@@ -19,14 +19,10 @@ class XalqbankCollector(BaseCollector):
     name = "Xalqbank"
 
     async def fetch_rates(self) -> list[tuple[str, float, float]]:
-        data = await self.run_sync(_fetch)
-        return _parse(data)
-
-
-def _fetch() -> list[dict]:
-    resp = requests.get(URL, headers=HEADERS, timeout=20)
-    resp.raise_for_status()
-    return resp.json()
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            resp = await client.get(URL, headers=HEADERS)
+            resp.raise_for_status()
+        return _parse(resp.json())
 
 
 def _parse(data: list[dict]) -> list[tuple[str, float, float]]:
@@ -39,7 +35,8 @@ def _parse(data: list[dict]) -> list[tuple[str, float, float]]:
         try:
             buy = float(item["BUYING_RATE"])
             sell = float(item["SELLING_RATE"])
-        except (KeyError, ValueError, TypeError):
+        except (KeyError, ValueError, TypeError) as e:
+            logger.debug("xalqbank: failed to parse %s: %s", code, e)
             continue
         if buy > 0 and sell > 0:
             rates.append((code, buy, sell))

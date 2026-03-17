@@ -88,29 +88,95 @@ def _build_collectors():
 
 async def run_collectors():
     """Run all collectors concurrently."""
+    import time
+    import collector_stats
+
     collectors = _build_collectors()
+    start_times = {c.slug: time.monotonic() for c in collectors}
     results = await asyncio.gather(
         *(c.collect() for c in collectors), return_exceptions=True
     )
     for c, r in zip(collectors, results):
+        elapsed_ms = (time.monotonic() - start_times[c.slug]) * 1000
         if isinstance(r, Exception):
             logger.error("Collector %s failed: %s", c.slug, r)
+            collector_stats.record(c.slug, 0, elapsed_ms, False, str(r))
         else:
             logger.info("Collector %s: %d rates", c.slug, r)
+            collector_stats.record(c.slug, r, elapsed_ms, True)
+
+    import cache
+    cache.invalidate()
+
+    # Check rate alerts
+    await _check_alerts()
+
+
+async def _check_alerts():
+    """Check pending alerts against latest rates and send notifications."""
+    from db import get_session
+    from repos import AlertRepo, BankRatesRepo
+
+    try:
+        async with get_session() as session:
+            alert_repo = AlertRepo(session)
+            rates_repo = BankRatesRepo(session)
+            pending = await alert_repo.get_pending()
+            if not pending:
+                return
+
+            # Cache best sell per currency
+            best_sell: dict[str, float] = {}
+            for code in ("USD", "EUR", "RUB"):
+                rates = await rates_repo.latest_by_code(code)
+                if rates:
+                    best_sell[code] = float(rates[0].sell)
+
+            # Lazy bot creation for sending messages
+            _bot = None
+            for alert in pending:
+                current = best_sell.get(alert.code)
+                if current is None:
+                    continue
+                triggered = False
+                if alert.direction == "above" and current >= float(alert.threshold):
+                    triggered = True
+                elif alert.direction == "below" and current <= float(alert.threshold):
+                    triggered = True
+
+                if triggered:
+                    await alert_repo.mark_triggered(alert.id)
+                    if _bot is None:
+                        _bot = Bot(token=settings.BOT_TOKEN)
+                    arrow = "⬆" if alert.direction == "above" else "⬇"
+                    text = (
+                        f"🚨 {alert.code} sell rate is now {current:,.0f} "
+                        f"({arrow} {float(alert.threshold):,.0f})"
+                    )
+                    try:
+                        await _bot.send_message(alert.tg_user_id, text)
+                    except Exception as e:
+                        logger.warning("Alert send failed for %d: %s", alert.tg_user_id, e)
+            if _bot:
+                await _bot.session.close()
+    except Exception as e:
+        logger.error("Alert check failed: %s", e)
 
 
 async def run_digest_morning(bot: Bot):
-    from bot.digest import send_digest
+    from bot.digest import send_digest, post_to_channels
 
     await send_digest(bot, "morning")
     await send_digest(bot, "twice")
+    await post_to_channels(bot, "morning")
 
 
 async def run_digest_evening(bot: Bot):
-    from bot.digest import send_digest
+    from bot.digest import send_digest, post_to_channels
 
     await send_digest(bot, "evening")
     await send_digest(bot, "twice")
+    await post_to_channels(bot, "evening")
 
 
 async def run_cleanup():
@@ -135,8 +201,10 @@ async def main():
 
     dp.message.middleware(DbMiddleware())
     dp.callback_query.middleware(DbMiddleware())
+    dp.inline_query.middleware(DbMiddleware())
     dp.message.middleware(I18nMiddleware())
     dp.callback_query.middleware(I18nMiddleware())
+    dp.inline_query.middleware(I18nMiddleware())
     dp.include_router(router)
 
     # Scheduler
@@ -178,6 +246,10 @@ async def main():
 
     scheduler.start()
 
+    # Health endpoint
+    from health import start_health_server
+    health_runner = await start_health_server()
+
     # Initial collection on startup
     logger.info("Running initial rate collection...")
     await run_collectors()
@@ -187,6 +259,11 @@ async def main():
         await dp.start_polling(bot)
     finally:
         scheduler.shutdown()
+        # Clean up health server
+        await health_runner.cleanup()
+        # Close shared Playwright browser
+        import browser_pool
+        await browser_pool.close()
         await bot.session.close()
 
 

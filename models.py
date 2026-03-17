@@ -50,3 +50,33 @@ class BankRate(Base):
     )
 
     bank: Mapped["Bank"] = relationship(back_populates="rates")
+
+
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tg_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(3), nullable=False)
+    direction: Mapped[str] = mapped_column(String(5), nullable=False)  # "above" or "below"
+    threshold: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    triggered: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ChannelSub(Base):
+    __tablename__ = "channel_subs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    schedule: Mapped[str] = mapped_column(
+        String(16), default="morning", nullable=False
+    )  # morning | evening | twice
+    lang: Mapped[str] = mapped_column(String(16), default="uz_cy", nullable=False)
+    added_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

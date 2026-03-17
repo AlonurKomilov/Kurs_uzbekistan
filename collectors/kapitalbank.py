@@ -31,39 +31,39 @@ class KapitalbankCollector(BaseCollector):
     name = "Kapitalbank"
 
     async def fetch_rates(self) -> list[tuple[str, float, float]]:
-        from playwright.async_api import async_playwright
+        from browser_pool import get_browser
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+        browser = await get_browser()
+        ctx = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1920, "height": 1080},
+        )
+        try:
+            page = await ctx.new_page()
+            await page.add_init_script(
+                "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
             )
+            resp = await page.goto(_URL, wait_until="domcontentloaded", timeout=30000)
+            if resp is None or resp.status != 200:
+                logger.warning("kapitalbank: HTTP %s", resp.status if resp else "no response")
+                return []
+
+            await page.wait_for_selector(".kapitalbank_currency_container", timeout=10000)
+            container = await page.query_selector(".kapitalbank_currency_container")
+            if not container:
+                logger.warning("kapitalbank: currency container not found")
+                return []
+
+            text = await container.inner_text()
+        finally:
             try:
-                ctx = await browser.new_context(
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
-                    ),
-                    viewport={"width": 1920, "height": 1080},
-                )
-                page = await ctx.new_page()
-                await page.add_init_script(
-                    "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
-                )
-                resp = await page.goto(_URL, wait_until="domcontentloaded", timeout=30000)
-                if resp is None or resp.status != 200:
-                    logger.warning("kapitalbank: HTTP %s", resp.status if resp else "no response")
-                    return []
-
-                await page.wait_for_selector(".kapitalbank_currency_container", timeout=10000)
-                container = await page.query_selector(".kapitalbank_currency_container")
-                if not container:
-                    logger.warning("kapitalbank: currency container not found")
-                    return []
-
-                text = await container.inner_text()
-            finally:
-                await browser.close()
+                await page.close()
+            except Exception:
+                pass
+            await ctx.close()
 
         return _parse_widget(text)
 

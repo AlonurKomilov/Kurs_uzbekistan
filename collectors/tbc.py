@@ -2,14 +2,14 @@
 
 import logging
 
-import requests
+import httpx
 from bs4 import BeautifulSoup
 
 from collectors.base import BaseCollector, CURRENCIES, HEADERS
 
 logger = logging.getLogger(__name__)
 
-URL = "https://tbcbank.uz/uz/currency/"
+URL = "https://tbcbank.uz/currencies/"
 
 
 class TbcCollector(BaseCollector):
@@ -17,25 +17,17 @@ class TbcCollector(BaseCollector):
     name = "TBC Bank"
 
     async def fetch_rates(self) -> list[tuple[str, float, float]]:
-        content_type, data = await self.run_sync(_fetch)
-        if content_type == "json" and isinstance(data, dict):
-            return _parse_json(data)
-        if isinstance(data, str):
-            return _parse_html(data)
-        return []
-
-
-def _fetch():
-    headers = {**HEADERS, "Accept": "application/json, text/html, */*"}
-    resp = requests.get(URL, headers=headers, timeout=20)
-    resp.raise_for_status()
-    ct = resp.headers.get("content-type", "").lower()
-    if "json" in ct:
-        try:
-            return ("json", resp.json())
-        except ValueError:
-            pass
-    return ("html", resp.text)
+        headers = {**HEADERS, "Accept": "application/json, text/html, */*"}
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            resp = await client.get(URL, headers=headers)
+            resp.raise_for_status()
+        ct = resp.headers.get("content-type", "").lower()
+        if "json" in ct:
+            try:
+                return _parse_json(resp.json())
+            except ValueError:
+                pass
+        return _parse_html(resp.text)
 
 
 def _parse_json(data: dict) -> list[tuple[str, float, float]]:

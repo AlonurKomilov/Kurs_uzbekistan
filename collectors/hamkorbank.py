@@ -2,7 +2,7 @@
 
 import logging
 
-import requests
+import httpx
 
 from collectors.base import BaseCollector, CURRENCIES, HEADERS
 
@@ -16,15 +16,11 @@ class HamkorbankCollector(BaseCollector):
     name = "Hamkorbank"
 
     async def fetch_rates(self) -> list[tuple[str, float, float]]:
-        data = await self.run_sync(_fetch_json)
-        return _parse(data)
-
-
-def _fetch_json():
-    headers = {**HEADERS, "Accept": "application/json", "Referer": "https://hamkorbank.uz/"}
-    resp = requests.get(API_URL, headers=headers, timeout=20)
-    resp.raise_for_status()
-    return resp.json()
+        headers = {**HEADERS, "Accept": "application/json", "Referer": "https://hamkorbank.uz/"}
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            resp = await client.get(API_URL, headers=headers)
+            resp.raise_for_status()
+        return _parse(resp.json())
 
 
 def _parse(data) -> list[tuple[str, float, float]]:
@@ -48,7 +44,8 @@ def _parse(data) -> list[tuple[str, float, float]]:
         try:
             buy = float(item["buying_rate"]) / 100.0
             sell = float(item["selling_rate"]) / 100.0
-        except (KeyError, ValueError, TypeError):
+        except (KeyError, ValueError, TypeError) as e:
+            logger.debug("hamkorbank: failed to parse %s: %s", code, e)
             continue
         if 0 < buy < 1_000_000 and 0 < sell < 1_000_000:
             rates.append((code, buy, sell))

@@ -3,14 +3,14 @@
 import logging
 
 import certifi
-import requests
+import httpx
 from bs4 import BeautifulSoup
 
 from collectors.base import BaseCollector, CURRENCIES, HEADERS
 
 logger = logging.getLogger(__name__)
 
-URL = "https://www.ipotekabank.uz/currency/"
+URL = "https://www.ipotekabank.uz/private/services/currency/"
 
 
 class IpotekaCollector(BaseCollector):
@@ -18,14 +18,12 @@ class IpotekaCollector(BaseCollector):
     name = "Ipoteka Bank"
 
     async def fetch_rates(self) -> list[tuple[str, float, float]]:
-        html = await self.run_sync(_fetch_html)
-        return _parse(html)
-
-
-def _fetch_html() -> str:
-    resp = requests.get(URL, headers=HEADERS, timeout=20, verify=certifi.where())
-    resp.raise_for_status()
-    return resp.text
+        import ssl
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        async with httpx.AsyncClient(timeout=20.0, verify=ssl_ctx, follow_redirects=True) as client:
+            resp = await client.get(URL, headers=HEADERS)
+            resp.raise_for_status()
+        return _parse(resp.text)
 
 
 def _parse(html: str) -> list[tuple[str, float, float]]:
