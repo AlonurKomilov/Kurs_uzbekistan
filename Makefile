@@ -2,43 +2,58 @@
 PYTHON  := .venv/bin/python3
 APP     := main.py
 PID_FILE:= .bot.pid
+SERVICE := kurs-uz-bot
 
 .PHONY: start stop restart clean status logs
 
-## start — launch the bot in the background
+## start — start the bot (via systemd if installed, otherwise nohup fallback)
 start:
-	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
-		echo "Bot already running (PID $$(cat $(PID_FILE)))"; \
+	@if systemctl is-active --quiet $(SERVICE) 2>/dev/null; then \
+		echo "Bot already running via systemd ($(SERVICE))"; \
+	elif systemctl list-unit-files $(SERVICE).service 2>/dev/null | grep -q $(SERVICE); then \
+		sudo systemctl start $(SERVICE) && echo "Bot started via systemd"; \
 	else \
-		mkdir -p logs data; \
-		nohup $(PYTHON) $(APP) >> logs/bot.log 2>&1 & echo $$! > $(PID_FILE); \
-		echo "Bot started (PID $$(cat $(PID_FILE)))"; \
+		echo "[fallback] systemd service not installed, using nohup..."; \
+		if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
+			echo "Bot already running (PID $$(cat $(PID_FILE)))"; \
+		else \
+			mkdir -p logs data; \
+			nohup $(PYTHON) $(APP) >> logs/bot.log 2>&1 & echo $$! > $(PID_FILE); \
+			echo "Bot started (PID $$(cat $(PID_FILE)))"; \
+		fi; \
 	fi
 
-## stop — gracefully stop the bot
+## stop — stop the bot (via systemd if installed)
 stop:
-	@if [ -f $(PID_FILE) ]; then \
-		PID=$$(cat $(PID_FILE)); \
-		if kill -0 $$PID 2>/dev/null; then \
-			kill $$PID && echo "Bot stopped (PID $$PID)"; \
-		else \
-			echo "Bot not running (stale PID file)"; \
-		fi; \
-		rm -f $(PID_FILE); \
+	@if systemctl list-unit-files $(SERVICE).service 2>/dev/null | grep -q $(SERVICE); then \
+		sudo systemctl stop $(SERVICE) && echo "Bot stopped via systemd"; \
 	else \
-		echo "No PID file — trying to find process..."; \
-		PID=$$(pgrep -f "python.*$(APP)" | head -1); \
-		if [ -n "$$PID" ]; then \
-			kill $$PID && echo "Bot stopped (PID $$PID)"; \
+		echo "[fallback] Stopping via PID file..."; \
+		if [ -f $(PID_FILE) ]; then \
+			PID=$$(cat $(PID_FILE)); \
+			if kill -0 $$PID 2>/dev/null; then \
+				kill $$PID && echo "Bot stopped (PID $$PID)"; \
+			else \
+				echo "Bot not running (stale PID file)"; \
+			fi; \
+			rm -f $(PID_FILE); \
 		else \
-			echo "Bot is not running"; \
+			PID=$$(pgrep -f "python.*$(APP)" | head -1); \
+			if [ -n "$$PID" ]; then \
+				kill $$PID && echo "Bot stopped (PID $$PID)"; \
+			else \
+				echo "Bot is not running"; \
+			fi; \
 		fi; \
 	fi
 
-## restart — stop then start
-restart: stop
-	@sleep 1
-	@$(MAKE) start
+## restart — restart the bot (via systemd if installed)
+restart:
+	@if systemctl list-unit-files $(SERVICE).service 2>/dev/null | grep -q $(SERVICE); then \
+		sudo systemctl restart $(SERVICE) && echo "Bot restarted via systemd"; \
+	else \
+		$(MAKE) stop && sleep 1 && $(MAKE) start; \
+	fi
 
 ## clean — remove caches and temp files (keeps source, DB, .venv)
 clean:
@@ -49,15 +64,12 @@ clean:
 
 ## status — show whether the bot is running
 status:
-	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
-		echo "Bot is running (PID $$(cat $(PID_FILE)))"; \
+	@if systemctl list-unit-files $(SERVICE).service 2>/dev/null | grep -q $(SERVICE); then \
+		sudo systemctl status $(SERVICE) --no-pager || true; \
+	elif [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
+		echo "Bot is running via nohup (PID $$(cat $(PID_FILE)))"; \
 	else \
-		PID=$$(pgrep -f "python.*$(APP)" | head -1); \
-		if [ -n "$$PID" ]; then \
-			echo "Bot is running (PID $$PID, no PID file)"; \
-		else \
-			echo "Bot is not running"; \
-		fi; \
+		echo "Bot is not running"; \
 	fi
 
 ## logs — tail the bot log

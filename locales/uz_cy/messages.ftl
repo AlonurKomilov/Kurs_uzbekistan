@@ -6,6 +6,9 @@ button.language = 🌐 Тил
 button.converter = 💱 Конвертер
 button.show-all = 📋 Ҳаммаси
 button.back-to-top = 🔝 Топ 5
+button.alert = 🚨 Огоҳлантириш
+button.chart = 📈 Диаграмма
+button.branch = 🏦 Яқин банк
 
 # Start
 start.welcome = Ассалому алайкум! Мен KursBot — Ўзбекистон банкларининг валюта курслари. Қуйидаги тугмалардан бирини танланг:

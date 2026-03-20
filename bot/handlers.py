@@ -583,6 +583,67 @@ async def cb_noop(cb: CallbackQuery, **kw):
     await cb.answer()
 
 
+# ── Button: Alerts ─────────────────────────────────────────────────────
+
+@router.message(
+    lambda m: m.text
+    and any(
+        phrase in m.text
+        for phrase in ["Alerts", "Оповещения", "Огоҳлантириш"]
+    )
+)
+async def btn_alerts(message: Message, i18n, db_session, **kw):
+    if not message.from_user:
+        return
+    from repos import AlertRepo
+    alert_repo = AlertRepo(db_session)
+    alerts = await alert_repo.get_by_user(message.from_user.id)
+    if alerts:
+        from bot.keyboards import alert_list_keyboard, alert_currency_keyboard
+        await message.answer(
+            i18n("alert.list-title"),
+            reply_markup=alert_list_keyboard(alerts, i18n),
+        )
+    await message.answer(
+        i18n("alert.set-currency"),
+        reply_markup=alert_currency_keyboard(i18n),
+    )
+
+
+# ── Button: Chart ───────────────────────────────────────────────────────
+
+@router.message(
+    lambda m: m.text
+    and any(
+        phrase in m.text
+        for phrase in ["Chart", "График", "Диаграмма"]
+    )
+)
+async def btn_chart(message: Message, i18n, **kw):
+    from bot.keyboards import chart_currency_keyboard
+    await message.answer(
+        i18n("chart.title", code="...", days=7),
+        reply_markup=chart_currency_keyboard(),
+    )
+
+
+# ── Button: Nearest Branch ──────────────────────────────────────────────
+
+@router.message(
+    lambda m: m.text
+    and any(
+        phrase in m.text
+        for phrase in ["Nearest Branch", "Ближайший банк", "Яқин банк"]
+    )
+)
+async def btn_branch(message: Message, i18n, **kw):
+    from bot.keyboards import branch_location_keyboard
+    await message.answer(
+        i18n("branch.prompt"),
+        reply_markup=branch_location_keyboard(i18n),
+    )
+
+
 # ── Button: Converter ───────────────────────────────────────────────────
 
 @router.message(
@@ -1154,6 +1215,89 @@ async def cb_admin_stale(cb: CallbackQuery, db_session, **kw):
             lines.append(f"  • <b>{_html.escape(bname)}</b> — {time_str}")
         text = "\n".join(lines)
 
+    await _safe_edit(cb.message, text, reply_markup=admin_keyboard(), parse_mode="HTML")
+    await cb.answer()
+
+
+@router.callback_query(F.data == "adm:health")
+async def cb_admin_health(cb: CallbackQuery, **kw):
+    if not cb.from_user or not _is_admin(cb.from_user.id):
+        await cb.answer()
+        return
+
+    import os
+    import subprocess
+    import psutil
+    import collector_stats
+
+    # ── System metrics ───────────────────────────────────────
+    cpu_pct = psutil.cpu_percent(interval=0.5)
+    vm = psutil.virtual_memory()
+    ram_used = vm.used / (1024 ** 3)
+    ram_total = vm.total / (1024 ** 3)
+    ram_pct = vm.percent
+
+    disk = psutil.disk_usage("/")
+    disk_used = disk.used / (1024 ** 3)
+    disk_total = disk.total / (1024 ** 3)
+    disk_pct = disk.percent
+
+    # ── Bot process metrics ──────────────────────────────────
+    pid = os.getpid()
+    try:
+        proc = psutil.Process(pid)
+        proc_mem_mb = proc.memory_info().rss / (1024 ** 2)
+        proc_cpu = proc.cpu_percent(interval=0.2)
+        proc_threads = proc.num_threads()
+    except psutil.NoSuchProcess:
+        proc_mem_mb = proc_cpu = proc_threads = 0.0
+
+    # ── Uptime ───────────────────────────────────────────────
+    uptime = collector_stats.uptime_seconds()
+    h, rem = divmod(int(uptime), 3600)
+    m, s = divmod(rem, 60)
+    uptime_str = f"{h}h {m}m {s}s"
+
+    # ── systemd service status ───────────────────────────────
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", "kurs-uz-bot"],
+            capture_output=True, text=True, timeout=3
+        )
+        svc_state = result.stdout.strip()
+    except Exception:
+        svc_state = "unknown"
+
+    svc_icon = "🟢" if svc_state == "active" else "🔴"
+
+    # ── Collector summary ────────────────────────────────────
+    runs = collector_stats.get_all()
+    total_c = len(runs)
+    ok_c = sum(1 for r in runs.values() if r.success)
+    if runs:
+        last_ts = max(r.timestamp for r in runs.values())
+        age_m = int((time.time() - last_ts) / 60)
+        age_str = f"{age_m}m ago" if age_m < 60 else f"{age_m // 60}h {age_m % 60}m ago"
+    else:
+        age_str = "never"
+
+    text = (
+        f"🖥️ <b>Server &amp; Bot Health</b>\n\n"
+        f"<b>System</b>\n"
+        f"  CPU:  {cpu_pct:.1f}%\n"
+        f"  RAM:  {ram_used:.1f} / {ram_total:.1f} GB ({ram_pct:.0f}%)\n"
+        f"  Disk: {disk_used:.1f} / {disk_total:.1f} GB ({disk_pct:.0f}%)\n\n"
+        f"<b>Bot Process  (PID {pid})</b>\n"
+        f"  Uptime:  {uptime_str}\n"
+        f"  Memory:  {proc_mem_mb:.0f} MB\n"
+        f"  CPU:     {proc_cpu:.1f}%\n"
+        f"  Threads: {proc_threads}\n\n"
+        f"<b>Service</b>\n"
+        f"  {svc_icon} kurs-uz-bot: <code>{svc_state}</code>\n\n"
+        f"<b>Collectors</b>\n"
+        f"  ✅ {ok_c} / {total_c} succeeded\n"
+        f"  🕐 Last run: {age_str}"
+    )
     await _safe_edit(cb.message, text, reply_markup=admin_keyboard(), parse_mode="HTML")
     await cb.answer()
 

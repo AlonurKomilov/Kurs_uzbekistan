@@ -19,7 +19,8 @@ def main_keyboard(i18n: Callable, is_subscribed: bool = False) -> ReplyKeyboardM
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=i18n("button.current-rates"))],
-            [KeyboardButton(text=i18n("button.converter"))],
+            [KeyboardButton(text=i18n("button.converter")), KeyboardButton(text=i18n("button.chart"))],
+            [KeyboardButton(text=i18n("button.alert")), KeyboardButton(text=i18n("button.branch"))],
             [KeyboardButton(text=sub_btn), KeyboardButton(text=i18n("button.language"))],
         ],
         resize_keyboard=True,
@@ -217,7 +218,8 @@ def admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📊 Stats", callback_data="adm:stats")],
-            [InlineKeyboardButton(text="🔄 Collectors", callback_data="adm:collectors")],
+            [InlineKeyboardButton(text="�️ Server Health", callback_data="adm:health")],
+            [InlineKeyboardButton(text="�🔄 Collectors", callback_data="adm:collectors")],
             [InlineKeyboardButton(text="⚠️ Stale Data", callback_data="adm:stale")],
             [InlineKeyboardButton(text="🔃 Run collectors now", callback_data="adm:run")],
         ]

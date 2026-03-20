@@ -6,6 +6,9 @@ button.language = 🌐 Language
 button.converter = 💱 Converter
 button.show-all = 📋 Show All
 button.back-to-top = 🔝 Top 5
+button.alert = 🚨 Alerts
+button.chart = 📈 Chart
+button.branch = 🏦 Nearest Branch
 
 # Start
 start.welcome = Hello! I'm KursBot — currency exchange rates for Uzbekistan banks. Choose a button below:

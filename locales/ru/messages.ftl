@@ -6,6 +6,9 @@ button.language = 🌐 Язык
 button.converter = 💱 Конвертер
 button.show-all = 📋 Показать все
 button.back-to-top = 🔝 Топ 5
+button.alert = 🚨 Оповещения
+button.chart = 📈 График
+button.branch = 🏦 Ближайший банк
 
 # Start
 start.welcome = Привет! Я KursBot — курсы валют банков Узбекистана. Выберите кнопку:
