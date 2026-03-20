@@ -596,10 +596,10 @@ async def btn_alerts(message: Message, i18n, db_session, **kw):
     if not message.from_user:
         return
     from repos import AlertRepo
+    from bot.keyboards import alert_list_keyboard, alert_currency_keyboard
     alert_repo = AlertRepo(db_session)
-    alerts = await alert_repo.get_by_user(message.from_user.id)
+    alerts = await alert_repo.list_active(message.from_user.id)
     if alerts:
-        from bot.keyboards import alert_list_keyboard, alert_currency_keyboard
         await message.answer(
             i18n("alert.list-title"),
             reply_markup=alert_list_keyboard(alerts, i18n),
