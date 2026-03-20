@@ -88,7 +88,9 @@ alert.set-currency = Билдиришнома учун валютани танл
 alert.set-direction = Сотиш курси қачон:
 alert.above = ⬆️ Кўтарилса
 alert.below = ⬇️ Тушса
-alert.enter-threshold = Чегара курсини киритинг (мас: 12800):
+alert.enter-threshold = 💱 Ҳозирги <b>{ $code }</b> сотиш курси: <b>{ $rate }</b>
+
+Чегара курсини киритинг:
 alert.created = ✅ Билдиришнома ўрнатилди! { $code } сотиш { $direction } { $threshold } бўлганда хабар бераман.
 alert.invalid-number = Илтимос, тўғри рақам киритинг.
 alert.list-title = 🔔 Билдиришномаларингиз:

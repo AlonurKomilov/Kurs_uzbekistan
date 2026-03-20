@@ -88,7 +88,9 @@ alert.set-currency = Выберите валюту для уведомления
 alert.set-direction = Уведомить когда курс продажи:
 alert.above = ⬆️ Поднимется выше
 alert.below = ⬇️ Опустится ниже
-alert.enter-threshold = Введите пороговый курс (напр: 12800):
+alert.enter-threshold = 💱 Текущий курс продажи <b>{ $code }</b>: <b>{ $rate }</b>
+
+Введите пороговый курс:
 alert.created = ✅ Уведомление установлено! Сообщу когда { $code } продажа { $direction } { $threshold }.
 alert.invalid-number = Пожалуйста, введите корректное число.
 alert.list-title = 🔔 Ваши активные уведомления:

@@ -785,7 +785,19 @@ async def cb_alert_direction(cb: CallbackQuery, i18n, db_session, state: FSMCont
     await state.set_state(AlertStates.waiting_threshold)
     await state.update_data(alert_code=code, alert_direction=direction)
 
-    await _safe_edit(cb.message, i18n("alert.enter-threshold"))
+    # Fetch current best sell rate to show as reference
+    rates_data = cache.get(f"rates:{code}")
+    if rates_data is None:
+        rates_repo = BankRatesRepo(db_session)
+        rates_data = await rates_repo.latest_by_code(code)
+        cache.put(f"rates:{code}", rates_data)
+    current_sell = f"{float(rates_data[0].sell):,.0f}" if rates_data else "—"
+
+    await _safe_edit(
+        cb.message,
+        i18n("alert.enter-threshold", code=code, rate=current_sell),
+        parse_mode="HTML",
+    )
     await cb.answer()
 
 

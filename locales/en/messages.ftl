@@ -88,7 +88,9 @@ alert.set-currency = Select currency for alert:
 alert.set-direction = Notify when sell rate:
 alert.above = ⬆️ Goes above
 alert.below = ⬇️ Goes below
-alert.enter-threshold = Enter the threshold rate (e.g. 12800):
+alert.enter-threshold = 💱 Current <b>{ $code }</b> sell rate: <b>{ $rate }</b>
+
+Enter your alert threshold:
 alert.created = ✅ Alert set! I'll notify you when { $code } sell { $direction } { $threshold }.
 alert.invalid-number = Please enter a valid number.
 alert.list-title = 🔔 Your active alerts:
